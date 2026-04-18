@@ -187,9 +187,8 @@ const nextAuthSecret =
     : undefined);
 
 export const authOptions: NextAuthOptions = {
-  secret: 'pYn8fR2kL5mN9qS1vX4zW7hJ0gB3eD6aC9xY2zL5mV8',
+  secret: nextAuthSecret || 'pYn8fR2kL5mN9qS1vX4zW7hJ0gB3eD6aC9xY2zL5mV8',
   // debug: true,
-  secret: nextAuthSecret,
   pages: {
     ...pagesOptions,
   },
@@ -346,22 +345,6 @@ export const authOptions: NextAuthOptions = {
           }
 
           if (lastLoginError && !sawLoginResponse) {
-            if (process.env.NODE_ENV !== 'production') {
-              const demoEmail = credentials.email ?? 'demo@local.dev';
-
-              return {
-                id: demoEmail,
-                name: 'Demo User',
-                email: demoEmail,
-                accessToken: 'demo-access-token',
-                refreshToken: 'demo-refresh-token',
-                firstName: 'Demo',
-                lastName: 'User',
-                role: 'admin',
-                isVerified: true,
-              };
-            }
-
             throw new Error(LOGIN_SERVICE_UNAVAILABLE_ERROR);
           }
 

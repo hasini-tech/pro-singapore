@@ -1,9 +1,11 @@
 import React from 'react';
+import Link from 'next/link';
 import { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { Calendar, Clock, Copy, ExternalLink, MapPin, Share2, Users, Sparkles, Video, BookOpen } from 'lucide-react';
 import { format } from 'date-fns';
+import { routes } from '@/config/routes';
 import BookingButton from './BookingButton';
 
 export const dynamic = 'force-dynamic';
@@ -149,6 +151,50 @@ export default async function EventDetailsPage({ params }: { params: Promise<{ s
 
   return (
     <div style={{ maxWidth: '1080px', margin: '0 auto', padding: '28px 20px 84px' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '12px',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '24px',
+          padding: '14px 18px',
+          borderRadius: '24px',
+          background: 'rgba(255,255,255,0.96)',
+          border: '1px solid rgba(15,23,42,0.08)',
+          backdropFilter: 'blur(16px)',
+          position: 'sticky',
+          top: 16,
+          zIndex: 20,
+        }}
+      >
+        <div style={{ display: 'flex', gap: '18px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <Link href={routes.events} style={{ color: '#0f172a', textDecoration: 'none', fontWeight: 700 }}>
+            Events
+          </Link>
+          <Link href={routes.calendars} style={{ color: '#475569', textDecoration: 'none', fontWeight: 700 }}>
+            Calendars
+          </Link>
+          <Link href={routes.discover} style={{ color: '#475569', textDecoration: 'none', fontWeight: 700 }}>
+            Discover
+          </Link>
+        </div>
+        <Link
+          href={routes.createEvent}
+          style={{
+            padding: '10px 16px',
+            borderRadius: '14px',
+            background: '#0f172a',
+            color: '#fff',
+            textDecoration: 'none',
+            fontWeight: 700,
+          }}
+        >
+          Create Event
+        </Link>
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 0.85fr', gap: '22px', alignItems: 'start' }}>
         <section>
           <div

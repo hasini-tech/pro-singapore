@@ -119,7 +119,7 @@ type CreateEventForm = {
   title:string; description:string; date:string; time:string; end_time:string;
   location:string; is_online:boolean; is_paid:boolean; ticket_price:number;
   max_seats:number; status:EventStatus; community_enabled:boolean;
-  require_approval:boolean; agenda:string;
+  require_approval:boolean; agenda:string; limit_capacity:boolean; waitlist_enabled:boolean;
 };
 
 function localIso(d = new Date()) {
@@ -136,8 +136,9 @@ function addDays(iso:string,n:number) {
 
 const INITIAL:CreateEventForm = {
   title:'',description:'',date:localIso(),time:'19:00',end_time:'20:00',
-  location:'',is_online:false,is_paid:false,ticket_price:0,max_seats:0,
+  location:'',is_online:false,is_paid:false,ticket_price:0,max_seats:50,
   status:'published',community_enabled:true,require_approval:false,agenda:'',
+  limit_capacity:false,waitlist_enabled:false,
 };
 const TIMES = Array.from({length:48},(_,i)=>{
   const h=Math.floor(i/2).toString().padStart(2,'0'); const m=i%2===0?'00':'30';
@@ -527,6 +528,32 @@ function ThemeThumb({ theme, selected, onSelect }: { theme:typeof THEMES[0]; sel
   );
 }
 
+function EditOptionButton({ value, onClick, C }: { value: React.ReactNode; onClick: () => void; C: ReturnType<typeof makeColors> }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div 
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      title="Edit"
+      style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        padding: '4px 8px', borderRadius: 8,
+        cursor: 'pointer', transition: 'all 0.15s'
+      }}
+    >
+      <span style={{fontSize: 13, fontWeight: 600, color: C.muted}}>{value}</span>
+      <div style={{
+        background: hover ? 'rgba(128,128,128,0.2)' : 'transparent', 
+        padding: '4px 6px', borderRadius: 6, display: 'flex', alignItems: 'center',
+        transition: 'background 0.15s'
+      }}>
+        <PiPencilSimple size={14} color={C.muted}/>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function CreateEventBuilderPage() {
   const router = useRouter();
@@ -552,6 +579,7 @@ export default function CreateEventBuilderPage() {
   const [endDate,setEndDate]=useState(addDays(localIso(),1));
   const [timezone,setTimezone]=useState(POPULAR_TIMEZONES.find(z=>z.tz==='Asia/Calcutta')!);
   const [showStripePopup,setShowStripePopup]=useState(false);
+  const [showCapacityPopup,setShowCapacityPopup]=useState(false);
 
   type ActivePicker='startDate'|'startTime'|'endDate'|'endTime'|'timezone'|'visibility'|null;
   const [active,setActive]=useState<ActivePicker>(null);
@@ -884,10 +912,10 @@ export default function CreateEventBuilderPage() {
           <div style={{display:'flex',flexDirection:'column',gap:6}}>
             <div style={{fontSize:13,fontWeight:700,color:C.muted,paddingLeft:4}}>Event Options</div>
             <div style={{background:C.inputBg,borderRadius:16,overflow:'hidden',border:`1px solid ${C.chipBorder}`,backdropFilter:'blur(4px)'}}>
-              <div className="luma-option-row" onClick={() => setShowStripePopup(true)} style={{cursor: 'pointer'}}>
+              <div className="luma-option-row">
                 <PiTicket size={18} color={C.muted} style={{flexShrink:0}}/>
                 <span style={{flex:1,fontSize:14,fontWeight:600,color:C.text}}>Ticket Price</span>
-                <span style={{fontSize:13,color:C.muted,display:'flex',alignItems:'center',gap:5}}>Free <PiPencilSimple size={13}/></span>
+                <EditOptionButton value="Free" onClick={() => setShowStripePopup(true)} C={C} />
               </div>
               <div style={{height:1,background:C.divider,margin:'0 16px'}}/>
               <div className="luma-option-row">
@@ -899,7 +927,7 @@ export default function CreateEventBuilderPage() {
               <div className="luma-option-row">
                 <PiUsers size={18} color={C.muted} style={{flexShrink:0}}/>
                 <span style={{flex:1,fontSize:14,fontWeight:600,color:C.text}}>Capacity</span>
-                <span style={{fontSize:13,color:C.muted,display:'flex',alignItems:'center',gap:5}}>Unlimited <PiPencilSimple size={13}/></span>
+                <EditOptionButton value={form.limit_capacity ? form.max_seats : 'Unlimited'} onClick={() => setShowCapacityPopup(true)} C={C} />
               </div>
             </div>
           </div>
@@ -958,6 +986,59 @@ export default function CreateEventBuilderPage() {
               style={{width: '100%', padding: '14px', borderRadius: 12, background: '#2c2c2c', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', border: 'none', fontFamily: "'Inter', sans-serif"}}
             >
               Connect Stripe
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Capacity Popup ── */}
+      {showCapacityPopup && (
+        <div 
+          onClick={() => setShowCapacityPopup(false)}
+          style={{position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.1)'}}
+        >
+          <div 
+            onClick={e => e.stopPropagation()}
+            style={{background: '#222', borderRadius: 20, padding: 24, width: '100%', maxWidth: 360, boxShadow: '0 24px 60px rgba(0,0,0,0.4)', border: '1px solid #333'}}
+          >
+            <div style={{width: 48, height: 48, borderRadius: 24, background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16, border: '1px solid rgba(255,255,255,0.05)'}}>
+              <PiCloudArrowUp size={24} color="#fff" style={{transform: 'rotate(180deg)'}} /> 
+            </div>
+            <h3 style={{fontSize: 20, fontWeight: 800, color: '#fff', margin: '0 0 10px', letterSpacing: '-0.02em', fontFamily: "'Inter', sans-serif"}}>Max Capacity</h3>
+            <p style={{color: '#aaa', fontSize: 13.5, lineHeight: 1.5, margin: '0 0 24px', fontFamily: "'Inter', sans-serif"}}>Close registration when reaching the capacity. Only approved guests count towards it.</p>
+            
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: form.limit_capacity ? 20 : 24}}>
+              <span style={{fontSize: 15, fontWeight: 600, color: '#fff'}}>Limit Event Capacity</span>
+              <div className={`luma-toggle${form.limit_capacity?' on':''}`} onClick={()=>setField('limit_capacity',!form.limit_capacity)} style={form.limit_capacity ? {background: '#22c55e'} : {}}/>
+            </div>
+
+            {form.limit_capacity && (
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20}}>
+                <span style={{fontSize: 15, fontWeight: 600, color: '#fff'}}>Max Capacity</span>
+                <input 
+                  type="number" 
+                  value={form.max_seats} 
+                  onChange={e => setField('max_seats', parseInt(e.target.value) || 0)} 
+                  style={{width: 80, background: 'rgba(255,255,255,0.05)', color: '#fff', padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', textAlign: 'right', fontSize: 15, fontWeight: 600}} 
+                />
+              </div>
+            )}
+
+            {form.limit_capacity && (
+              <>
+                <div style={{height: 1, background: 'rgba(255,255,255,0.1)', margin: '0 0 20px'}}/>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24}}>
+                  <span style={{fontSize: 15, fontWeight: 600, color: '#fff'}}>Over-Capacity Waitlist</span>
+                  <div className={`luma-toggle${form.waitlist_enabled?' on':''}`} onClick={()=>setField('waitlist_enabled',!form.waitlist_enabled)}/>
+                </div>
+              </>
+            )}
+
+            <button 
+              onClick={() => setShowCapacityPopup(false)}
+              style={{width: '100%', padding: '14px', borderRadius: 12, background: '#fff', color: '#111', fontSize: 15, fontWeight: 700, cursor: 'pointer', border: 'none', fontFamily: "'Inter', sans-serif"}}
+            >
+              Confirm
             </button>
           </div>
         </div>

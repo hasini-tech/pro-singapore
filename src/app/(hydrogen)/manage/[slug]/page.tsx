@@ -505,8 +505,8 @@ export default function ManageEventPage() {
                              <User size={16} color="var(--manage-muted)" />
                           </div>
                           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                             <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>Monica</span>
-                             <span style={{ fontSize: "0.85rem", color: "var(--manage-muted)" }}>monicanazi142003@gmail.com</span>
+                             <span style={{ fontWeight: 700, fontSize: "0.95rem" }}></span>
+                             <span style={{ fontSize: "0.85rem", color: "var(--manage-muted)" }}></span>
                           </div>
                         </div>
                       ) : (

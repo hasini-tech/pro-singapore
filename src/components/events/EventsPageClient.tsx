@@ -13,7 +13,7 @@ export default function EventsPageClient() {
         minHeight: '100vh',
       }}
     >
-      <section className="page-shell" style={{ paddingTop: '28px', paddingBottom: '60px' }}>
+      <section className="page-shell" style={{ paddingTop: '28px', paddingBottom: '60px', maxWidth: '1440px', width: '100%', margin: '0 auto', paddingLeft: '40px', paddingRight: '40px' }}>
         <div style={eventsHeroGridStyle}>
           <div style={eventsHeroCopyStyle}>
             <div className="eyebrow" style={{ width: 'fit-content', padding: '8px 12px', fontSize: '0.8rem' }}>
@@ -129,7 +129,7 @@ const eventsHeroActionsStyle: React.CSSProperties = {
 const eventsHeroVisualStyle: React.CSSProperties = {
   padding: '0',
   position: 'relative',
-  overflow: 'hidden',
+  overflow: 'visible',
   display: 'grid',
   placeItems: 'center',
   alignSelf: 'center',

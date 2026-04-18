@@ -138,59 +138,7 @@ const localStore: LocalStore =
 
 globalForEvently.__eventlyLocalStore = localStore;
 
-// Seed initial mock data for local development if empty
-if (localStore.eventsById.size === 0) {
-  const demoHostId = 'demo@local.dev';
-  const demoEventId = 'demo-event-1';
-  const now = new Date();
-  const pastDate = new Date(now.getTime() - 1000 * 60 * 60 * 24 * 2).toISOString(); // 2 days ago
-  
-  localStore.usersById.set(demoHostId, {
-    id: demoHostId,
-    name: 'Demo User',
-    email: demoHostId,
-    bio: 'Product Demo Host',
-    profile_image: '',
-    links: [],
-    role: 'admin',
-    created_at: now.toISOString(),
-    updated_at: now.toISOString(),
-  });
-
-  localStore.eventsById.set(demoEventId, {
-    id: demoEventId,
-    title: 'Welcome to GrowthLab',
-    description: 'This is a sample past event to get you started.',
-    date: pastDate.split('T')[0],
-    time: '18:00',
-    location: 'Virtual Office',
-    is_online: true,
-    cover_image: DEFAULT_EVENT_COVER,
-    slug: 'welcome-to-growthlab',
-    host_id: demoHostId,
-    host_name: 'Demo User',
-    host_image: '',
-    host_bio: '',
-    is_paid: false,
-    ticket_price: 0,
-    max_seats: 100,
-    seats_left: 95,
-    attendee_count: 5,
-    status: 'published',
-    community_enabled: true,
-    speakers: [],
-    agenda: [],
-    integrations: [],
-    confirmed_count: 5,
-    waitlisted_count: 0,
-    checked_in_count: 3,
-    ticket_sales: 0,
-    conversion_rate: 100,
-    share_url: '',
-    created_at: pastDate,
-  });
-  localStore.slugToId.set('welcome-to-growthlab', demoEventId);
-}
+// Removed initial mock data for local development as per request
 
 // Prefer explicit service URLs. If no API gateway is configured, fall back to
 // local dev ports instead of the port-80 gateway (which often isn't running
