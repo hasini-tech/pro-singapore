@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useModal } from '@/app/shared/modal-views/use-modal';
 import { CalendarEvent } from '@/types';
 import { PiMapPin, PiXBold } from 'react-icons/pi';
@@ -9,10 +10,12 @@ import { MdOutlineCalendarMonth } from 'react-icons/md';
 import useEventCalendar from '@/hooks/use-event-calendar';
 import { formatDate } from '@/utils/format-date';
 import EventForm from '@/app/shared/event-calendar/event-form';
+import toast from 'react-hot-toast';
 
 function DetailsEvents({ event }: { event: CalendarEvent }) {
   const { deleteEvent } = useEventCalendar();
   const { openModal, closeModal } = useModal();
+  const [deleting, setDeleting] = useState(false);
 
   function handleEditModal() {
     closeModal(),
@@ -22,9 +25,19 @@ function DetailsEvents({ event }: { event: CalendarEvent }) {
       });
   }
 
-  function handleDelete(eventID: string) {
-    deleteEvent(eventID);
-    closeModal();
+  async function handleDelete(eventID: string) {
+    setDeleting(true);
+    try {
+      await deleteEvent(eventID);
+      toast.success('Event deleted successfully');
+      closeModal();
+    } catch (requestError) {
+      toast.error(
+        requestError instanceof Error ? requestError.message : 'Could not delete this event.',
+      );
+    } finally {
+      setDeleting(false);
+    }
   }
 
   return (
@@ -82,10 +95,13 @@ function DetailsEvents({ event }: { event: CalendarEvent }) {
           <Button
             variant="outline"
             onClick={() => handleDelete(event.id as string)}
+            disabled={deleting}
           >
-            Delete
+            {deleting ? 'Deleting...' : 'Delete'}
           </Button>
-          <Button onClick={handleEditModal}>Edit</Button>
+          <Button onClick={handleEditModal} disabled={deleting}>
+            Edit
+          </Button>
         </div>
       </div>
     </div>

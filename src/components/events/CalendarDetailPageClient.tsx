@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
@@ -31,19 +31,6 @@ import { useAuth } from '@/context/auth-context';
 import api from '@/lib/api';
 import { routes } from '@/config/routes';
 import { DEFAULT_EVENT_COVER } from '@/lib/defaults';
-import {
-  isLocalFallbackResponse,
-  mergeUniqueTimelineItems,
-  readStoredTimelineIdentity,
-} from '@/lib/personalTimelineCache';
-import {
-  getOwnerCalendarDetailCacheKey,
-  getOwnerCalendarsCacheKey,
-  readOwnerCalendarDetailCache,
-  readOwnerCalendarsCache,
-  writeOwnerCalendarDetailCache,
-  writeOwnerCalendarsCache,
-} from '@/lib/ownerCalendarCache';
 
 type OwnerCalendar = {
   id: string;
@@ -213,15 +200,15 @@ function formatMoney(value: number) {
   }).format(value || 0);
 }
 
-function readStoredItems<T>(key: string, fallback: T): T {
-  if (typeof window === 'undefined') return fallback;
+function readStoredItems<T>(key: string, defaultValue: T): T {
+  if (typeof window === 'undefined') return defaultValue;
 
   try {
     const raw = window.localStorage.getItem(key);
-    if (!raw) return fallback;
+    if (!raw) return defaultValue;
     return JSON.parse(raw) as T;
   } catch {
-    return fallback;
+    return defaultValue;
   }
 }
 
@@ -301,20 +288,6 @@ export default function CalendarDetailPageClient({ slug }: { slug: string }) {
 
     async function fetchCalendarDetail() {
       setLoading(true);
-      const identity = user ?? readStoredTimelineIdentity();
-      const detailCacheKey = getOwnerCalendarDetailCacheKey(identity, slug);
-      const listCacheKey = getOwnerCalendarsCacheKey(identity);
-      const cachedDetail = readOwnerCalendarDetailCache<{
-        calendar: OwnerCalendar;
-        events: CalendarEvent[];
-      }>(detailCacheKey);
-
-      if (cachedDetail?.calendar) {
-        setCalendar(cachedDetail.calendar);
-        setEvents(Array.isArray(cachedDetail.events) ? cachedDetail.events : []);
-        setError('');
-        setLoading(false);
-      }
 
       try {
         const safeSlug = encodeURIComponent(slug);
@@ -324,44 +297,16 @@ export default function CalendarDetailPageClient({ slug }: { slug: string }) {
         ]);
         if (!isActive) return;
 
-        const calendarFallback = isLocalFallbackResponse(calendarResponse.headers);
-        const eventsFallback = isLocalFallbackResponse(eventsResponse.headers);
         const fetchedCalendar = calendarResponse.data as OwnerCalendar;
-        const fetchedEvents = Array.isArray(eventsResponse.data) ? eventsResponse.data : [];
-        const nextCalendar =
-          calendarFallback && cachedDetail?.calendar ? cachedDetail.calendar : fetchedCalendar;
-        const nextEvents =
-          eventsFallback && cachedDetail?.events ? cachedDetail.events : fetchedEvents;
-
-        setCalendar(nextCalendar);
-        setEvents(nextEvents);
+        const fetchedEvents = Array.isArray(eventsResponse.data) ? (eventsResponse.data as CalendarEvent[]) : [];
+        setCalendar(fetchedCalendar);
+        setEvents(fetchedEvents);
         setError('');
-
-        if ((!calendarFallback || !eventsFallback) && nextCalendar) {
-          writeOwnerCalendarDetailCache(detailCacheKey, {
-            calendar: nextCalendar,
-            events: nextEvents,
-          });
-        }
-
-        if (!calendarFallback && fetchedCalendar) {
-          const cachedCalendars = readOwnerCalendarsCache<OwnerCalendar>(listCacheKey).filter(
-            (calendar): calendar is OwnerCalendar => Boolean(calendar) && typeof calendar === 'object',
-          );
-          writeOwnerCalendarsCache(
-            listCacheKey,
-            mergeUniqueTimelineItems([fetchedCalendar], cachedCalendars),
-          );
-        }
       } catch (err: any) {
         if (!isActive) return;
-        if (cachedDetail?.calendar) {
-          setCalendar(cachedDetail.calendar);
-          setEvents(Array.isArray(cachedDetail.events) ? cachedDetail.events : []);
-          setError('');
-        } else {
-          setError(err?.response?.data?.detail || 'Could not load this calendar.');
-        }
+        setError(err?.response?.data?.detail || 'Could not load this calendar.');
+        setCalendar(null);
+        setEvents([]);
       } finally {
         if (isActive) {
           setLoading(false);
@@ -529,7 +474,7 @@ export default function CalendarDetailPageClient({ slug }: { slug: string }) {
       (settingsForm.location_scope === 'global' || settingsForm.city.trim()),
   );
 
-  const tabs: Array<{ id: DetailTab; label: string; icon: JSX.Element }> = [
+  const tabs: Array<{ id: DetailTab; label: string; icon: ReactNode }> = [
     { id: 'events', label: 'Events', icon: <CalendarDays size={15} /> },
     { id: 'people', label: 'People', icon: <Users size={15} /> },
     { id: 'newsletters', label: 'Newsletters', icon: <Megaphone size={15} /> },
@@ -554,20 +499,6 @@ export default function CalendarDetailPageClient({ slug }: { slug: string }) {
       });
       const updatedCalendar = response.data as OwnerCalendar;
       setCalendar(updatedCalendar);
-      const identity = user ?? readStoredTimelineIdentity();
-      const detailCacheKey = getOwnerCalendarDetailCacheKey(identity, updatedCalendar.slug);
-      const listCacheKey = getOwnerCalendarsCacheKey(identity);
-      const cachedCalendars = readOwnerCalendarsCache<OwnerCalendar>(listCacheKey).filter(
-        (item): item is OwnerCalendar => Boolean(item) && typeof item === 'object',
-      );
-      writeOwnerCalendarDetailCache(detailCacheKey, {
-        calendar: updatedCalendar,
-        events,
-      });
-      writeOwnerCalendarsCache(
-        listCacheKey,
-        mergeUniqueTimelineItems([updatedCalendar], cachedCalendars),
-      );
       setSettingsMessage('Calendar settings saved.');
       if (updatedCalendar.slug !== slug) {
         router.replace(`/calendars/${updatedCalendar.slug}`);
@@ -2021,7 +1952,7 @@ function StatsCard({
   label: string;
   value: string;
   helper: string;
-  icon: JSX.Element;
+  icon: ReactNode;
 }) {
   return (
     <div style={panelStyle}>

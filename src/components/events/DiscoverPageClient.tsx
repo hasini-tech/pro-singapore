@@ -246,14 +246,14 @@ function deriveEventCategories(event: DiscoverEvent): CategoryId[] {
     return matched;
   }
 
-  const fallbackBlob = eventSearchBlob(event);
-  if (event.is_online || fallbackBlob.includes('developer') || fallbackBlob.includes('product')) {
+  const eventBlob = eventSearchBlob(event);
+  if (event.is_online || eventBlob.includes('developer') || eventBlob.includes('product')) {
     return ['tech'];
   }
   if (
-    fallbackBlob.includes('network') ||
-    fallbackBlob.includes('launch') ||
-    fallbackBlob.includes('founder')
+    eventBlob.includes('network') ||
+    eventBlob.includes('launch') ||
+    eventBlob.includes('founder')
   ) {
     return ['startup'];
   }
@@ -394,7 +394,7 @@ export default function DiscoverPageClient() {
     if (savedFollowedCalendars) {
       try {
         const parsed = JSON.parse(savedFollowedCalendars);
-        setFollowedCalendars(Array.isArray(parsed) ? parsed : []);
+        setFollowedCalendars(Array.isArray(parsed) ? (parsed as string[]) : []);
       } catch {
         setFollowedCalendars([]);
       }
@@ -946,7 +946,7 @@ export default function DiscoverPageClient() {
             <h2 style={sectionTitleStyle}>Relevant picks around {localLabel}</h2>
             <p style={sectionCopyStyle}>
               This section reacts to the city field and timezone, giving users local suggestions
-              first and quality online fallbacks when nearby supply is thin.
+              first and quality online options when nearby supply is thin.
             </p>
           </div>
           <div style={localInfoPillStyle}>

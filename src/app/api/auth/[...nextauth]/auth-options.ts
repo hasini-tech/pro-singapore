@@ -4,8 +4,7 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
 import LinkedInProvider from 'next-auth/providers/linkedin';
 import { env } from '@/env.mjs';
-import { getApiBaseUrl } from '@/utils/api-base-url';
-import { getUserServiceUrl } from '@/utils/get-user-service-url';
+import { decodeNextAuthJwt, getNextAuthSecret } from '@/utils/nextauth-secret';
 import { pagesOptions } from './pages-options';
 
 type LoginCredentials = {
@@ -46,10 +45,10 @@ type LoginResponse = {
   detail?: string;
 };
 
-const LOGIN_ENDPOINTS = ['/auth/login', '/api/users/login'] as const;
+const LOGIN_ENDPOINTS = ['/login', '/auth/login'] as const;
 const LOGIN_AUDIT_ENDPOINTS = [
+  '/login-history',
   '/auth/login-history',
-  '/api/users/login-history',
 ] as const;
 const LOGIN_SERVICE_UNAVAILABLE_ERROR = 'LoginServiceUnavailable';
 
@@ -180,14 +179,14 @@ function getConfiguredOAuthProviders(): AuthProvider[] {
 }
 
 const oauthProviders = getConfiguredOAuthProviders();
-const nextAuthSecret =
-  process.env.NEXTAUTH_SECRET ||
-  (process.env.NODE_ENV !== 'production'
-    ? 'development-secret-change-me'
-    : undefined);
+const nextAuthSecret = getNextAuthSecret();
+if (!process.env.NEXTAUTH_URL) {
+  process.env.NEXTAUTH_URL = env.NEXTAUTH_URL;
+}
+const authProxyBaseUrl = new URL('/api/users', env.NEXTAUTH_URL).toString();
 
 export const authOptions: NextAuthOptions = {
-  secret: nextAuthSecret || 'pYn8fR2kL5mN9qS1vX4zW7hJ0gB3eD6aC9xY2zL5mV8',
+  secret: nextAuthSecret,
   // debug: true,
   pages: {
     ...pagesOptions,
@@ -253,6 +252,9 @@ export const authOptions: NextAuthOptions = {
       return baseUrl;
     },
   },
+  jwt: {
+    decode: decodeNextAuthJwt,
+  },
   providers: [
     CredentialsProvider({
       id: 'credentials',
@@ -270,8 +272,6 @@ export const authOptions: NextAuthOptions = {
             return null;
           }
 
-          const loginApiBaseUrl = getUserServiceUrl();
-          const auditApiBaseUrl = getApiBaseUrl();
           const requestBody = JSON.stringify({
             email: credentials.email,
             emailAddress: credentials.email,
@@ -285,7 +285,7 @@ export const authOptions: NextAuthOptions = {
 
             try {
               response = await fetch(
-                joinApiUrl(loginApiBaseUrl, endpoint),
+                joinApiUrl(authProxyBaseUrl, endpoint),
                 {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -316,7 +316,7 @@ export const authOptions: NextAuthOptions = {
             const user = data ? buildLoginUser(data) : null;
 
             if (user) {
-              void storeLoginAudit(auditApiBaseUrl, {
+              void storeLoginAudit(authProxyBaseUrl, {
                 userId: user.id,
                 email: user.email,
                 name: user.name,
@@ -349,7 +349,7 @@ export const authOptions: NextAuthOptions = {
           }
 
           console.error(
-            `Unable to find a supported login endpoint under ${loginApiBaseUrl}`
+            `Unable to find a supported login endpoint under ${authProxyBaseUrl}`
           );
           return null;
         } catch (error) {

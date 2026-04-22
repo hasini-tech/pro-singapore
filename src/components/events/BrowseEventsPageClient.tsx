@@ -7,14 +7,6 @@ import { useAuth } from '@/context/auth-context';
 import api from '@/lib/api';
 import { routes } from '@/config/routes';
 import { DEFAULT_EVENT_COVER } from '@/lib/defaults';
-import {
-  getPersonalTimelineCacheKey,
-  isLocalFallbackResponse,
-  mergeUniqueTimelineItems,
-  readPersonalTimelineCacheItems,
-  readStoredTimelineIdentity,
-  writePersonalTimelineCacheItems,
-} from '@/lib/personalTimelineCache';
 
 type EventsTab = 'upcoming' | 'past';
 type EventsMode = 'personal' | 'public';
@@ -61,39 +53,6 @@ type EventGroup = {
 };
 
 const EXCLUDED_TICKET_STATUSES = new Set(['cancelled', 'rejected']);
-
-function readCachedEvent(serialized: string | null) {
-  if (!serialized) return null;
-  try {
-    return JSON.parse(serialized);
-  } catch {
-    return null;
-  }
-}
-
-function readPersonalTimelineCache(cacheKey: string | null) {
-  return readPersonalTimelineCacheItems<Partial<EventRecord>>(cacheKey)
-    .map((event) => {
-      const relationship =
-        event && typeof event === 'object' && 'relationship' in event
-          ? (event.relationship as EventRelationship)
-          : 'hosting';
-      return normalizeEvent(event as Partial<EventRecord>, relationship);
-    })
-    .filter((event): event is EventRecord => event !== null);
-}
-
-function writePersonalTimelineCache(cacheKey: string | null, events: EventRecord[]) {
-  writePersonalTimelineCacheItems(cacheKey, events);
-}
-
-function mergeLatestEvent(events: EventRecord[], latestEvent: EventRecord | null) {
-  if (!latestEvent) {
-    return events;
-  }
-
-  return events.some((event) => event.id === latestEvent.id) ? events : [latestEvent, ...events];
-}
 
 function normalizeEvent(
   event: Partial<EventRecord> | null,
@@ -170,30 +129,6 @@ function normalizeTicketEvents(records: unknown) {
       );
     })
     .filter((event): event is EventRecord => event !== null);
-}
-
-function mergePersonalEvents(
-  hostedEvents: EventRecord[],
-  attendingEvents: EventRecord[],
-  latestHostedEvent: EventRecord | null,
-) {
-  const merged = new Map<string, EventRecord>();
-
-  hostedEvents.forEach((event) => {
-    merged.set(event.id, event);
-  });
-
-  attendingEvents.forEach((event) => {
-    if (!merged.has(event.id)) {
-      merged.set(event.id, event);
-    }
-  });
-
-  if (latestHostedEvent) {
-    merged.set(latestHostedEvent.id, latestHostedEvent);
-  }
-
-  return Array.from(merged.values());
 }
 
 function parseDateValue(value?: string | null) {
@@ -648,30 +583,9 @@ export default function BrowseEventsPageClient() {
     const loadEvents = async () => {
       setLoading(true);
       setError('');
-
-      const latestCreatedEvent =
-        typeof window !== 'undefined' ? sessionStorage.getItem('latest_created_event') : null;
-      const parsedLatestEvent = normalizeEvent(
-        readCachedEvent(latestCreatedEvent) as Partial<EventRecord> | null,
-        'hosting',
-      );
       const hasSession = Boolean(typeof window !== 'undefined' && localStorage.getItem('evently_token'));
-      const identity = user ?? readStoredTimelineIdentity();
-      const personalCacheKey = getPersonalTimelineCacheKey(identity);
-      const cachedPersonalEvents = readPersonalTimelineCache(personalCacheKey);
 
       if (user || hasSession) {
-        const seededPersonalEvents = parsedLatestEvent
-          ? mergeLatestEvent(cachedPersonalEvents, parsedLatestEvent)
-          : cachedPersonalEvents;
-
-        if (seededPersonalEvents.length > 0) {
-          if (!mounted) return;
-          setEvents(seededPersonalEvents);
-          setMode('personal');
-          setLoading(false);
-        }
-
         const [hostedResult, ticketsResult] = await Promise.allSettled([
           api.get('/events/my-events'),
           api.get('/tickets/my-tickets'),
@@ -679,44 +593,32 @@ export default function BrowseEventsPageClient() {
 
         const hostedSucceeded = hostedResult.status === 'fulfilled';
         const ticketsSucceeded = ticketsResult.status === 'fulfilled';
-        const cachedHostedEvents = cachedPersonalEvents.filter((event) => event.relationship === 'hosting');
         const hostedEventsFromApi = hostedSucceeded ? normalizeEventList(hostedResult.value.data, 'hosting') : [];
-        const seededHostedEvents = parsedLatestEvent
-          ? mergeUniqueTimelineItems([parsedLatestEvent], cachedHostedEvents)
-          : cachedHostedEvents;
-        const hostedEvents = hostedSucceeded
-          ? isLocalFallbackResponse(hostedResult.value.headers)
-            ? mergeUniqueTimelineItems(hostedEventsFromApi, seededHostedEvents)
-            : mergeLatestEvent(hostedEventsFromApi, parsedLatestEvent)
-          : seededHostedEvents;
+        const hostedEvents = hostedSucceeded ? hostedEventsFromApi : [];
         const attendingEvents = ticketsSucceeded ? normalizeTicketEvents(ticketsResult.value.data) : [];
 
         if (hostedSucceeded || ticketsSucceeded) {
-          const mergedEvents = mergePersonalEvents(hostedEvents, attendingEvents, null);
+          const mergedEvents = [...hostedEvents, ...attendingEvents].reduce<EventRecord[]>(
+            (list, event) => {
+              if (list.some((item) => item.id === event.id)) {
+                return list;
+              }
+
+              return [...list, event];
+            },
+            [],
+          );
           if (!mounted) return;
           setEvents(mergedEvents);
           setMode('personal');
-          writePersonalTimelineCache(personalCacheKey, mergedEvents);
-          if (parsedLatestEvent) {
-            sessionStorage.removeItem('latest_created_event');
-          }
           setLoading(false);
           return;
         }
 
         if (!mounted) return;
-        if (cachedPersonalEvents.length > 0) {
-          setEvents(mergeLatestEvent(cachedPersonalEvents, parsedLatestEvent));
-          setMode('personal');
-          if (parsedLatestEvent) {
-            sessionStorage.removeItem('latest_created_event');
-          }
-          setLoading(false);
-          return;
-        }
         setMode('personal');
-        setEvents(parsedLatestEvent ? [parsedLatestEvent] : []);
         setError('Could not load your events right now.');
+        setEvents([]);
         setLoading(false);
         return;
       }

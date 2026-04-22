@@ -14,7 +14,6 @@ import {
 import { useAuth } from "@/context/auth-context";
 import api from "@/lib/api";
 import { DEFAULT_EVENT_COVER } from "@/lib/defaults";
-import { getPersonalTimelineCacheKey, mergeUniqueTimelineItems, readPersonalTimelineCacheItems, readStoredTimelineIdentity, writePersonalTimelineCacheItems } from "@/lib/personalTimelineCache";
 import Image from 'next/image';
 import { useTheme } from "next-themes";
 
@@ -619,17 +618,15 @@ export default function CreateEventBuilderPage() {
   const handleSubmit=async(e:FormEvent)=>{
     e.preventDefault(); setLoading(true); setError('');
     try {
-      const payload={...form,calendar_id:selectedCalendarId,cover_image:uploadedImage||DEFAULT_EVENT_COVER,date:new Date(`${form.date}T${form.time}`).toISOString()};
+      const payload={
+        ...form,
+        calendar_id:selectedCalendarId,
+        cover_image:uploadedImage||DEFAULT_EVENT_COVER,
+        date:new Date(`${form.date}T${form.time}`).toISOString(),
+        end_date:new Date(`${endDate}T${form.end_time}`).toISOString(),
+      };
       const res=await api.post('/events/',payload);
-      const identity=user??readStoredTimelineIdentity();
-      const key=getPersonalTimelineCacheKey(identity);
-      
-      try {
-        writePersonalTimelineCacheItems(key,mergeUniqueTimelineItems([{...res.data,relationship:'hosting'}],readPersonalTimelineCacheItems(key)));
-      } catch(e) {
-        // Silently catch quota exceeded errors if image base64 is huge
-      }
-      
+
       // Use a hard redirect to bypass Next.js RSC fetch soft-navigation which can throw TypeError: Failed to fetch
       window.location.href = `/manage/${res.data.slug}`;
     } catch(err:any) { setError(err?.response?.data?.detail||'Failed to create event'); setLoading(false); }

@@ -1,46 +1,94 @@
-import { atom, useAtom } from 'jotai';
-import uniqueId from 'lodash/uniqueId';
-import { CalendarEvent } from '../types';
-
-const event = [
-  {
-    id: uniqueId(),
-    start: new Date(),
-    end: new Date(),
-    allDay: false,
-    title: 'Meeting with Paige',
-    description: 'About Planning',
-    location: `At Paige's place`,
-  },
-];
-
-export const eventAtom = atom<CalendarEvent[]>(event);
+import { useCallback, useEffect, useState } from 'react';
+import type { CalendarEvent } from '../types';
+import api from '@/lib/api';
+import {
+  mapApiEventToCalendarEvent,
+  mapCalendarEventToApiPayload,
+  normalizeApiEventList,
+} from '@/components/events/event-api';
 
 export default function useEventCalendar() {
-  const [events, setEvents] = useAtom(eventAtom);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  function createEvent(event: CalendarEvent) {
-    setEvents((prev) => [...prev, event]);
-  }
+  const refreshEvents = useCallback(async () => {
+    setLoading(true);
+    setError('');
 
-  function updateEvent(updatedEvent: CalendarEvent) {
-    // Use map to replace the object with the same id
-    const updatedEvents = events.map((event) => {
-      if (event.id === updatedEvent.id) {
-        return updatedEvent; // replace with the updated object
-      }
-      return event; // keep the original object
-    });
-    setEvents(updatedEvents);
-  }
+    try {
+      const response = await api.get('/events/my-events');
+      setEvents(normalizeApiEventList(response.data));
+    } catch (requestError: any) {
+      setError(
+        requestError?.response?.data?.detail ||
+          requestError?.message ||
+          'Could not load your events.',
+      );
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  function deleteEvent(eventID: string) {
-    // Use filter to create a new array without the event to be deleted
-    const updatedEvents = events.filter((event) => event.id !== eventID);
+  useEffect(() => {
+    void refreshEvents();
+  }, [refreshEvents]);
 
-    // Update the state with the new array of events
-    setEvents(updatedEvents);
-  }
+  const createEvent = useCallback(async (event: CalendarEvent) => {
+    const response = await api.post('/events/', mapCalendarEventToApiPayload(event));
+    const createdEvent = mapApiEventToCalendarEvent(response.data);
 
-  return { events, setEvents, createEvent, updateEvent, deleteEvent };
+    if (createdEvent) {
+      setEvents((current) => [...current, createdEvent]);
+    } else {
+      await refreshEvents();
+    }
+
+    return createdEvent;
+  }, [refreshEvents]);
+
+  const updateEvent = useCallback(async (updatedEvent: CalendarEvent) => {
+    const eventId = String(updatedEvent.id || '').trim();
+    if (!eventId) {
+      throw new Error('Missing event id.');
+    }
+
+    const response = await api.put(
+      `/events/${encodeURIComponent(eventId)}`,
+      mapCalendarEventToApiPayload(updatedEvent, { includeDefaults: false }),
+    );
+    const persistedEvent = mapApiEventToCalendarEvent(response.data);
+
+    if (persistedEvent) {
+      setEvents((current) =>
+        current.map((event) => (String(event.id) === persistedEvent.id ? persistedEvent : event)),
+      );
+    } else {
+      await refreshEvents();
+    }
+
+    return persistedEvent;
+  }, [refreshEvents]);
+
+  const deleteEvent = useCallback(async (eventID: string) => {
+    const targetId = String(eventID || '').trim();
+    if (!targetId) {
+      throw new Error('Missing event id.');
+    }
+
+    await api.delete(`/events/${encodeURIComponent(targetId)}`);
+    setEvents((current) => current.filter((event) => String(event.id) !== targetId));
+  }, []);
+
+  return {
+    events,
+    loading,
+    error,
+    setEvents,
+    refreshEvents,
+    createEvent,
+    updateEvent,
+    deleteEvent,
+  };
 }

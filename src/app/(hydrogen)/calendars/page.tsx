@@ -36,7 +36,7 @@ export default function CalendarsPage() {
       try {
         const response = await api.get('/events/calendars');
         if (!active) return;
-        setCalendars(Array.isArray(response.data) ? response.data : []);
+        setCalendars(Array.isArray(response.data) ? (response.data as OwnerCalendar[]) : []);
       } catch (err: any) {
         if (!active) return;
         setError(err?.response?.data?.detail || 'Unable to load calendars.');

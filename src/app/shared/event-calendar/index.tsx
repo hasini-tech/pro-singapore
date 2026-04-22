@@ -3,6 +3,7 @@
 import { useCallback, useMemo } from 'react';
 import type { CalendarEvent } from '@/types';
 import dayjs from 'dayjs';
+import { Loader2 } from 'lucide-react';
 import { Calendar, dayjsLocalizer } from 'react-big-calendar';
 import EventForm from '@/app/shared/event-calendar/event-form';
 import DetailsEvents from '@/app/shared/event-calendar/details-event';
@@ -20,7 +21,7 @@ const rtcEventClassName =
   '[&_.rbc-event]:!text-gray-0 dark:[&_.rbc-event]:!text-gray-0 dark:[&_.rbc-toolbar_>_*:last-child_>_button.rbc-active:hover]:!text-gray-0 dark:[&_.rbc-toolbar_>_*:last-child_>_button.rbc-active:focus]:!text-gray-0';
 
 export default function EventCalendarView() {
-  const { events } = useEventCalendar();
+  const { events, loading, error } = useEventCalendar();
   const { openModal } = useModal();
   const { colorPresetName } = useColorPresetName();
 
@@ -66,8 +67,21 @@ export default function EventCalendarView() {
     []
   );
 
+  if (loading) {
+    return (
+      <div className="@container grid min-h-[650px] place-items-center">
+        <Loader2 className="animate-spin text-primary" size={36} />
+      </div>
+    );
+  }
+
   return (
     <div className="@container">
+      {error ? (
+        <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          {error}
+        </div>
+      ) : null}
       <Calendar
         localizer={localizer}
         events={events}

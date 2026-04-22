@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
@@ -50,18 +51,10 @@ import {
 import Facebook from "@/components/icons/facebook";
 import Linkedin from "@/components/icons/linkedin";
 import Twitter from "@/components/icons/twitter";
-import Navbar from "@/components/events/Navbar";
 import { useAuth } from "@/context/auth-context";
 import api from "@/lib/api";
 import { DEFAULT_EVENT_COVER } from "@/lib/defaults";
-import {
-  getPersonalTimelineCacheKey,
-  isLocalFallbackResponse,
-  mergeUniqueTimelineItems,
-  readPersonalTimelineCacheItems,
-  readStoredTimelineIdentity,
-  writePersonalTimelineCacheItems,
-} from "@/lib/personalTimelineCache";
+import { routes } from "@/config/routes";
 import { QRCodeSVG } from "qrcode.react";
 
 type EventRecord = {
@@ -89,7 +82,6 @@ type EventRecord = {
 };
 
 type Insight = { label: string; value: string | number };
-type CachedHostedEvent = EventRecord & { relationship?: string };
 
 type EditForm = {
   title: string;
@@ -174,32 +166,6 @@ async function copyText(text: string) {
   document.body.removeChild(input);
 }
 
-function readCachedHostedEvents(identity: { id?: string | null; email?: string | null } | null | undefined) {
-  const cacheKey = getPersonalTimelineCacheKey(identity);
-  const items = readPersonalTimelineCacheItems<CachedHostedEvent>(cacheKey).filter(
-    (item): item is CachedHostedEvent => Boolean(item) && typeof item === "object",
-  );
-
-  return {
-    cacheKey,
-    items: items.filter((item) => {
-      const relationship = typeof item.relationship === "string" ? item.relationship : "hosting";
-      return relationship === "hosting";
-    }),
-  };
-}
-
-function writeCachedHostedEvent(
-  identity: { id?: string | null; email?: string | null } | null | undefined,
-  event: EventRecord,
-) {
-  const { cacheKey, items } = readCachedHostedEvents(identity);
-  writePersonalTimelineCacheItems(
-    cacheKey,
-    mergeUniqueTimelineItems([{ ...event, relationship: "hosting" }], items),
-  );
-}
-
 export default function ManageEventPage() {
   const router = useRouter();
   const params = useParams();
@@ -237,16 +203,6 @@ export default function ManageEventPage() {
     const load = async () => {
       setLoading(true);
       setError(null);
-      const identity = user ?? readStoredTimelineIdentity();
-      const { items: cachedHostedEvents } = readCachedHostedEvents(identity);
-      const cachedEvent =
-        cachedHostedEvents.find((item) => String(item.slug || "").trim() === slug) || null;
-
-      if (cachedEvent && mounted) {
-        setEvent(cachedEvent);
-        setEditForm(buildEditForm(cachedEvent));
-        setLoading(false);
-      }
 
       try {
         const response = await api.get(`/events/manage/${slug}`);
@@ -254,7 +210,6 @@ export default function ManageEventPage() {
         if (!mounted) return;
         setEvent(eventData);
         setEditForm(buildEditForm(eventData));
-        writeCachedHostedEvent(identity, eventData);
 
         // Fetch guests from ticket service
         api
@@ -288,7 +243,6 @@ export default function ManageEventPage() {
         if (!mounted) return;
         const status = err?.response?.status;
         const detail = err?.response?.data?.detail;
-        const usedFallback = isLocalFallbackResponse(err?.response?.headers);
 
         if (status === 401) {
           router.replace(`/signin?redirect=/manage/${slug}`);
@@ -297,14 +251,6 @@ export default function ManageEventPage() {
 
         if (status === 403) {
           setError("You are not authorized to manage this event.");
-          return;
-        }
-
-        if (cachedEvent && (usedFallback || !status || status >= 500)) {
-          setEvent(cachedEvent);
-          setEditForm(buildEditForm(cachedEvent));
-          setError(null);
-          setMessage("Showing your last saved event details while the event service reconnects.");
           return;
         }
 
@@ -329,6 +275,11 @@ export default function ManageEventPage() {
     if (event.is_online) return "Online";
     return event.location || "Venue TBA";
   }, [event]);
+  const createEventHref = user
+    ? routes.createEvent === "/create-event"
+      ? "/create-event/form"
+      : routes.createEvent
+    : "/create-event/continue?redirect=/create-event/form";
 
   const shareEvent = async () => {
     if (!event || !shareUrl) return;
@@ -369,7 +320,6 @@ export default function ManageEventPage() {
       const { data } = await api.put(`/events/${event.id}`, payload);
       setEvent(data);
       setEditForm(buildEditForm(data));
-      writeCachedHostedEvent(user ?? readStoredTimelineIdentity(), data);
       setEditOpen(false);
       setMessage("Event details updated.");
     } catch (err: any) {
@@ -388,6 +338,42 @@ export default function ManageEventPage() {
   return (
     <PageShell>
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "34px 18px 72px" }}>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "18px",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: "24px",
+            padding: "14px 18px",
+            borderRadius: "24px",
+            background: "rgba(255,255,255,0.96)",
+            border: "1px solid rgba(15,23,42,0.08)",
+            backdropFilter: "blur(16px)",
+            position: "sticky",
+            top: 16,
+            zIndex: 20,
+          }}
+        >
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "18px", alignItems: "center" }}>
+            <Link href={routes.events} style={topNavActiveLinkStyle}>
+              Events
+            </Link>
+            <Link href={routes.calendars} style={topNavLinkStyle}>
+              Calendars
+            </Link>
+            <Link href={routes.discover} style={topNavLinkStyle}>
+              Discover
+            </Link>
+          </div>
+
+          <Link href={createEventHref} style={topCreateEventButtonStyle}>
+            <Plus size={14} />
+            Create Event
+          </Link>
+        </div>
+
         {/* Breadcrumb & Header */}
         <div style={{ marginBottom: 32 }}>
           <div 
@@ -1003,6 +989,33 @@ export default function ManageEventPage() {
     </PageShell>
   );
 }
+
+const topNavLinkStyle: React.CSSProperties = {
+  color: "#6b7280",
+  textDecoration: "none",
+  fontWeight: 700,
+  fontSize: "0.98rem",
+  padding: "6px 2px",
+};
+
+const topNavActiveLinkStyle: React.CSSProperties = {
+  ...topNavLinkStyle,
+  color: "#5b63ff",
+};
+
+const topCreateEventButtonStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "8px",
+  padding: "9px 14px",
+  borderRadius: "14px",
+  background: "#107478",
+  color: "#ffffff",
+  textDecoration: "none",
+  fontWeight: 700,
+  fontSize: "0.92rem",
+  boxShadow: "0 12px 24px rgba(16,116,120,0.18)",
+};
 
 function PageShell({ children }: { children: React.ReactNode }) {
   const { theme } = useTheme();

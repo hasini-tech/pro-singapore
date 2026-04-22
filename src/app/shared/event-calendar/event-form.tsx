@@ -1,6 +1,6 @@
 'use client';
 
-import uniqueId from 'lodash/uniqueId';
+import { useState } from 'react';
 import { PiXBold } from 'react-icons/pi';
 import { Controller, SubmitHandler } from 'react-hook-form';
 import { ActionIcon, Button, Input, Text, Textarea, Title } from 'rizzui';
@@ -29,37 +29,45 @@ export default function EventForm({
 }: CreateEventProps) {
   const { closeModal } = useModal();
   const { createEvent, updateEvent } = useEventCalendar();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   const isUpdateEvent = event !== undefined;
 
-  const onSubmit: SubmitHandler<EventFormInput> = (data) => {
-    const isNewEvent = data.id === '' || data.id === undefined;
+  const onSubmit: SubmitHandler<EventFormInput> = async (data) => {
+    setSaving(true);
+    setError('');
 
-    console.log('event_data', data);
+    const nextEvent = {
+      id: event?.id || data.id || '',
+      start: data.startDate ?? startDate ?? new Date(),
+      end: data.endDate ?? endDate ?? new Date(),
+      title: data.title,
+      description: data.description,
+      location: data.location,
+    };
 
-    toast.success(
-      <Text as="b">
-        Event {isNewEvent ? 'Created' : 'Updated'} Successfully
-      </Text>
-    );
+    try {
+      if (isUpdateEvent) {
+        await updateEvent(nextEvent);
+      } else {
+        await createEvent(nextEvent);
+      }
 
-    if (isNewEvent) {
-      createEvent({
-        id: uniqueId(),
-        start: data.startDate ?? startDate,
-        end: data.endDate ?? endDate,
-        title: data.title,
-        description: data.description,
-        location: data.location,
-      });
-    } else {
-      updateEvent({
-        ...data,
-        start: data.startDate,
-        end: data.endDate,
-      });
+      toast.success(
+        <Text as="b">Event {isUpdateEvent ? 'Updated' : 'Created'} Successfully</Text>,
+      );
+      closeModal();
+    } catch (requestError) {
+      const message =
+        requestError instanceof Error
+          ? requestError.message
+          : 'Could not save the event right now.';
+      setError(message);
+      toast.error(message);
+    } finally {
+      setSaving(false);
     }
-    closeModal();
   };
 
   return (
@@ -161,19 +169,27 @@ export default function EventForm({
               />
               <div className={cn('col-span-full grid grid-cols-2 gap-4 pt-5')}>
                 <Button
+                  type="button"
                   variant="outline"
                   className="w-full @xl:w-auto dark:hover:border-gray-400"
                   onClick={() => closeModal()}
+                  disabled={saving}
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
                   className="hover:gray-700 w-full @xl:w-auto"
+                  disabled={saving}
                 >
-                  Save
+                  {saving ? 'Saving...' : 'Save'}
                 </Button>
               </div>
+              {error ? (
+                <Text className="col-span-full text-sm font-medium text-red-500">
+                  {error}
+                </Text>
+              ) : null}
             </>
           );
         }}

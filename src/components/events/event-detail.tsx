@@ -14,8 +14,33 @@ import {
 } from 'react-icons/pi';
 import { Badge, Text, Title } from 'rizzui';
 import BookingButton from './BookingButton';
-import type { GrowthLabEvent } from './event-data';
 import { routes } from '@/config/routes';
+
+type GrowthLabEvent = {
+  slug: string;
+  title: string;
+  type: string;
+  date: string;
+  time: string;
+  location: string;
+  attendees: string;
+  summary: string;
+  description: string;
+  image: string;
+  ctaLabel: string;
+  ctaHref: string;
+  accent: string;
+  format: string;
+  capacity: string;
+  rsvpWindow: string;
+  host: string;
+  highlights: string[];
+  agenda: Array<{
+    time: string;
+    title: string;
+    detail: string;
+  }>;
+};
 
 function MetaRow({
   icon: Icon,

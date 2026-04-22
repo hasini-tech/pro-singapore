@@ -6,9 +6,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 type RouteContext = {
-  params: {
-    path?: string[];
-  };
+  params: Promise<{
+    path: string[];
+  }>;
 };
 
 type LocalEvent = {
@@ -138,8 +138,6 @@ const localStore: LocalStore =
 
 globalForEvently.__eventlyLocalStore = localStore;
 
-// Removed initial mock data for local development as per request
-
 // Prefer explicit service URLs. If no API gateway is configured, fall back to
 // local dev ports instead of the port-80 gateway (which often isn't running
 // during local development).
@@ -165,7 +163,11 @@ const DEFAULT_SERVICE_BASES: Record<string, string> = {
 };
 
 const SERVICE_BASES: Record<string, string> = {
-  users: process.env.NEXT_PUBLIC_USER_API_URL || API_GATEWAY_BASE || DEFAULT_SERVICE_BASES.users,
+  users:
+    process.env.USER_SERVICE_URL ||
+    process.env.NEXT_PUBLIC_USER_API_URL ||
+    API_GATEWAY_BASE ||
+    DEFAULT_SERVICE_BASES.users,
   events: process.env.NEXT_PUBLIC_EVENT_API_URL || API_GATEWAY_BASE || DEFAULT_SERVICE_BASES.events,
   tickets: process.env.NEXT_PUBLIC_TICKET_API_URL || API_GATEWAY_BASE || DEFAULT_SERVICE_BASES.tickets,
   payments: process.env.NEXT_PUBLIC_PAYMENT_API_URL || API_GATEWAY_BASE || DEFAULT_SERVICE_BASES.payments,
@@ -217,10 +219,10 @@ function resolveServiceBases(service?: string) {
   }
 
   const configured = SERVICE_BASES[service] || SERVICE_BASES.api;
-  const fallback = DEFAULT_SERVICE_BASES[service];
+  const defaultServiceBase = DEFAULT_SERVICE_BASES[service];
 
   return Array.from(
-    new Set([configured, fallback].filter((value): value is string => Boolean(value)))
+    new Set([configured, defaultServiceBase].filter((value): value is string => Boolean(value)))
   );
 }
 
@@ -260,7 +262,7 @@ function slugify(title: string) {
   return `${base || 'event'}-${suffix}`;
 }
 
-function normalizeSlugBase(value: string, fallback = 'calendar') {
+function normalizeSlugBase(value: string, defaultValue = 'calendar') {
   const base = value
     .toLowerCase()
     .trim()
@@ -269,7 +271,7 @@ function normalizeSlugBase(value: string, fallback = 'calendar') {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 
-  return base || fallback;
+  return base || defaultValue;
 }
 
 function sortEventsByDateAsc(events: LocalEvent[]) {
@@ -376,8 +378,8 @@ function getLocalUserByEmail(email: string) {
   return null;
 }
 
-function getLocalUserRole(email: string, fallback = 'user') {
-  return LOCAL_ADMIN_EMAILS.has(email.trim().toLowerCase()) ? 'admin' : fallback;
+function getLocalUserRole(email: string, defaultRole = 'user') {
+  return LOCAL_ADMIN_EMAILS.has(email.trim().toLowerCase()) ? 'admin' : defaultRole;
 }
 
 function displayNameFromEmail(email: string) {
@@ -452,6 +454,16 @@ function getLocalTicketByRef(ticketRef: string) {
 
   for (const ticket of Array.from(localStore.ticketsById.values())) {
     if (ticket.ticket_ref === ticketRef) {
+      return ticket;
+    }
+  }
+
+  return null;
+}
+
+function getLocalTicketByEventAndUser(eventId: string, userId: string) {
+  for (const ticket of Array.from(localStore.ticketsById.values())) {
+    if (ticket.event_id === eventId && ticket.user_id === userId) {
       return ticket;
     }
   }
@@ -1170,6 +1182,16 @@ async function proxyRequest(request: NextRequest, context: RouteContext) {
   }
 
   let lastUpstreamResponse: Response | null = null;
+  const fallbackResponse = getServiceFallbackResponse(service, request, route, requestBody);
+  const shouldPreferLocalFallback =
+    process.env.NODE_ENV !== 'production' &&
+    Boolean(service) &&
+    ['users', 'events', 'tickets', 'payments', 'attendees', 'blasts'].includes(service);
+
+  if (shouldPreferLocalFallback && fallbackResponse) {
+    fallbackResponse.headers.set('x-evently-source', 'local-dev');
+    return fallbackResponse;
+  }
 
   for (const baseUrl of resolveServiceBases(service)) {
     const targetUrl = buildTargetUrl(baseUrl, request, segments);
@@ -1197,44 +1219,18 @@ async function proxyRequest(request: NextRequest, context: RouteContext) {
     }
   }
 
-  if (service === 'blasts') {
-    const response = NextResponse.json([]);
-    response.headers.set('x-evently-source', 'local-fallback');
-    return response;
-  }
-
-  if (service === 'users') {
-    const response = getUserFallbackResponse(request, route, requestBody);
-    response.headers.set('x-evently-source', 'local-fallback');
-    return response;
-  }
-
-  if (service === 'attendees') {
-    const response = getAttendeeFallbackResponse(request, route, requestBody);
-    response.headers.set('x-evently-source', 'local-fallback');
-    return response;
-  }
-
-  if (service === 'events') {
-    const response = getEventFallbackResponse(request, route, requestBody);
-    response.headers.set('x-evently-source', 'local-fallback');
-    return response;
-  }
-
-  if (service === 'tickets') {
-    const response = getTicketFallbackResponse(request, route, requestBody);
-    response.headers.set('x-evently-source', 'local-fallback');
-    return response;
-  }
-
-  if (service === 'payments') {
-    const response = getPaymentFallbackResponse(request, route, requestBody);
-    response.headers.set('x-evently-source', 'local-fallback');
-    return response;
+  if (fallbackResponse && (!lastUpstreamResponse || lastUpstreamResponse.status >= 500)) {
+    fallbackResponse.headers.set('x-evently-source', 'local-dev');
+    return fallbackResponse;
   }
 
   if (lastUpstreamResponse) {
     return lastUpstreamResponse;
+  }
+
+  if (fallbackResponse) {
+    fallbackResponse.headers.set('x-evently-source', 'local-dev');
+    return fallbackResponse;
   }
 
   return NextResponse.json(
@@ -1245,209 +1241,483 @@ async function proxyRequest(request: NextRequest, context: RouteContext) {
   );
 }
 
-function getEventFallbackResponse(request: NextRequest, route: string, requestBody: any) {
-  const normalizedRoute = route.replace(/^\/+|\/+$/g, '');
+function getServiceFallbackResponse(
+  service: string | undefined,
+  request: NextRequest,
+  route: string,
+  requestBody: any
+) {
+  switch (service) {
+    case 'users':
+      return getUserFallbackResponse(request, route, requestBody);
+    case 'events':
+      return getEventsFallbackResponse(request, route, requestBody);
+    case 'tickets':
+      return getTicketsFallbackResponse(request, route, requestBody);
+    case 'payments':
+      return getPaymentsFallbackResponse(request, route, requestBody);
+    case 'attendees':
+      return getAttendeesFallbackResponse(request, route, requestBody);
+    case 'blasts':
+      return getBlastsFallbackResponse(request, route);
+    default:
+      return null;
+  }
+}
 
-  if (normalizedRoute === 'my-events') {
-    const events = buildLocalMyEvents(request);
-    if (!events) {
-      return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
-    }
-    const response = NextResponse.json(events);
-    response.headers.set('x-evently-source', 'local-fallback');
-    return response;
+function normalizeFallbackRoute(route: string) {
+  return route
+    .split('/')
+    .map((segment) => {
+      const trimmed = segment.trim();
+      if (!trimmed) {
+        return '';
+      }
+
+      try {
+        return decodeURIComponent(trimmed);
+      } catch {
+        return trimmed;
+      }
+    })
+    .filter(Boolean);
+}
+
+function getLocalEventResponse(event: LocalEvent) {
+  return refreshLocalEventMetrics(event.id) ?? event;
+}
+
+function getLocalEventListResponse(events: LocalEvent[]) {
+  return events.map((event) => getLocalEventResponse(event));
+}
+
+function getLocalTicketListResponse(tickets: LocalTicket[]) {
+  return tickets
+    .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
+    .map((ticket) => buildLocalTicketDetail(ticket, getLocalEventById(ticket.event_id), getLocalUserById(ticket.user_id)));
+}
+
+function getLocalAttendeeListResponse(tickets: LocalTicket[]) {
+  return tickets
+    .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
+    .map((ticket) => buildLocalTicketDetail(ticket, getLocalEventById(ticket.event_id), getLocalUserById(ticket.user_id)));
+}
+
+function deleteLocalEventRecord(eventId: string) {
+  const event = getLocalEventById(eventId);
+  if (!event) {
+    return false;
   }
 
-  if (normalizedRoute === 'analytics/overview') {
-    const userId = requireLocalUserId(request);
-    if (!userId) {
-      return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
+  localStore.eventsById.delete(event.id);
+  localStore.slugToId.delete(event.slug);
+
+  for (const [ticketId, ticket] of Array.from(localStore.ticketsById.entries())) {
+    if (ticket.event_id !== event.id) {
+      continue;
     }
+
+    localStore.ticketsById.delete(ticketId);
+    localStore.ticketsByRef.delete(ticket.ticket_ref);
+  }
+
+  for (const [sessionId, payment] of Array.from(localStore.paymentsBySessionId.entries())) {
+    if (payment.event_id !== event.id) {
+      continue;
+    }
+
+    localStore.paymentsBySessionId.delete(sessionId);
+  }
+
+  return true;
+}
+
+function createLocalEventResponse(request: NextRequest, requestBody: any) {
+  const actor = readLocalActor(request);
+  if (!actor) {
+    return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
+  }
+
+  if (!requestBody || typeof requestBody !== 'object') {
+    return NextResponse.json({ detail: 'Invalid event payload.' }, { status: 400 });
+  }
+
+  const selectedCalendarId = String(requestBody?.calendar_id || '').trim();
+  const selectedCalendarSlug = String(requestBody?.calendar_slug || '').trim();
+  let selectedCalendar: LocalCalendar | null = null;
+
+  if (selectedCalendarId) {
+    selectedCalendar = getLocalCalendarById(selectedCalendarId);
+    if (!selectedCalendar) {
+      return NextResponse.json({ detail: 'Calendar not found.' }, { status: 404 });
+    }
+  } else if (selectedCalendarSlug) {
+    selectedCalendar = getLocalCalendarBySlug(selectedCalendarSlug);
+    if (!selectedCalendar) {
+      return NextResponse.json({ detail: 'Calendar not found.' }, { status: 404 });
+    }
+  } else {
+    selectedCalendar = ensureLocalOwnerCalendar(request);
+  }
+
+  if (!selectedCalendar) {
+    return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
+  }
+
+  if (selectedCalendar.owner_id !== actor.userId) {
+    return NextResponse.json({ detail: 'Not authorized to use this calendar.' }, { status: 403 });
+  }
+
+  const createdEvent = persistLocalEvent(
+    buildLocalEvent(
+      {
+        ...requestBody,
+        host_id: actor.userId,
+      },
+      request,
+      selectedCalendar
+    )
+  );
+
+  return NextResponse.json(getLocalEventResponse(createdEvent), { status: 201 });
+}
+
+function getLocalManageEventResponse(request: NextRequest, eventSlug: string) {
+  const actor = readLocalActor(request);
+  if (!actor) {
+    return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
+  }
+
+  const event = getLocalEventBySlug(eventSlug);
+  if (!event) {
+    return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
+  }
+
+  if (event.host_id !== actor.userId) {
+    return NextResponse.json({ detail: 'Not authorized to manage this event.' }, { status: 403 });
+  }
+
+  return NextResponse.json(getLocalEventResponse(event));
+}
+
+function updateLocalEventResponse(request: NextRequest, eventIdOrSlug: string, requestBody: any) {
+  const actor = readLocalActor(request);
+  if (!actor) {
+    return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
+  }
+
+  const event = getLocalEventByIdOrSlug(eventIdOrSlug);
+  if (!event) {
+    return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
+  }
+
+  if (event.host_id !== actor.userId) {
+    return NextResponse.json({ detail: 'Not authorized to manage this event.' }, { status: 403 });
+  }
+
+  if (!requestBody || typeof requestBody !== 'object') {
+    return NextResponse.json({ detail: 'Invalid event payload.' }, { status: 400 });
+  }
+
+  return NextResponse.json(getLocalEventResponse(updateLocalEvent(event, requestBody)));
+}
+
+function deleteLocalEventResponse(request: NextRequest, eventIdOrSlug: string) {
+  const actor = readLocalActor(request);
+  if (!actor) {
+    return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
+  }
+
+  const event = getLocalEventByIdOrSlug(eventIdOrSlug);
+  if (!event) {
+    return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
+  }
+
+  if (event.host_id !== actor.userId) {
+    return NextResponse.json({ detail: 'Not authorized to manage this event.' }, { status: 403 });
+  }
+
+  deleteLocalEventRecord(event.id);
+  return NextResponse.json({ success: true });
+}
+
+function createLocalTicketResponse(request: NextRequest, requestBody: any) {
+  const actor = readLocalActor(request);
+  if (!actor) {
+    return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
+  }
+
+  const eventId = String(requestBody?.event_id || '').trim();
+  if (!eventId) {
+    return NextResponse.json({ detail: 'Event id is required.' }, { status: 400 });
+  }
+
+  const event = getLocalEventByIdOrSlug(eventId);
+  if (!event) {
+    return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
+  }
+
+  const user = ensureLocalUser(actor.userId, {
+    email: actor.email,
+    name: actor.name,
+  });
+
+  const existingTicket = getLocalTicketByEventAndUser(event.id, user.id);
+  if (existingTicket) {
+    return NextResponse.json(
+      buildLocalTicketDetail(existingTicket, event, user),
+      { status: 200 }
+    );
+  }
+
+  const activeTickets = getLocalEventTickets(event.id).filter((ticket) =>
+    ['confirmed', 'pending_payment', 'pending_approval'].includes(ticket.status)
+  );
+  const isWaitlisted = event.max_seats > 0 && activeTickets.length >= event.max_seats;
+  const now = new Date().toISOString();
+  const ticketRef = `TKT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+  const ticket: LocalTicket = persistLocalTicket({
+    id: crypto.randomUUID(),
+    ticket_ref: ticketRef,
+    event_id: event.id,
+    user_id: user.id,
+    status: isWaitlisted ? 'waitlisted' : event.is_paid ? 'pending_payment' : 'confirmed',
+    ticket_type: event.is_paid ? 'paid' : 'free',
+    payment_status: isWaitlisted ? 'not_required' : event.is_paid ? 'pending' : 'completed',
+    stripe_session_id: '',
+    qr_code: buildLocalQrCode(ticketRef, event.id, user.id),
+    checked_in: false,
+    checked_in_at: null,
+    created_at: now,
+    amount: Number(event.ticket_price || 0),
+  });
+
+  refreshLocalEventMetrics(event.id);
+  return NextResponse.json(buildLocalTicketDetail(ticket, event, user), { status: 201 });
+}
+
+function completeLocalPaymentSession(request: NextRequest, requestBody: any) {
+  const ticketRef = String(requestBody?.ticket_ref || '').trim();
+  const eventId = String(requestBody?.event_id || '').trim();
+
+  if (!ticketRef) {
+    return NextResponse.json({ detail: 'Ticket reference is required.' }, { status: 400 });
+  }
+
+  const ticket = getLocalTicketByRef(ticketRef);
+  if (!ticket) {
+    return NextResponse.json({ detail: 'Ticket not found.' }, { status: 404 });
+  }
+
+  const event = getLocalEventById(ticket.event_id) ?? (eventId ? getLocalEventByIdOrSlug(eventId) : null);
+  if (!event) {
+    return NextResponse.json({ detail: 'Event not found.' }, { status: 404 });
+  }
+
+  if (ticket.status === 'waitlisted') {
+    return NextResponse.json({ detail: 'Waitlisted tickets do not require payment.' }, { status: 400 });
+  }
+
+  const now = new Date().toISOString();
+  const stripeSessionId = `cs_test_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
+  const payment = persistLocalPayment({
+    id: crypto.randomUUID(),
+    user_id: ticket.user_id,
+    ticket_ref: ticket.ticket_ref,
+    event_id: event.id,
+    stripe_session_id: stripeSessionId,
+    amount: Number(requestBody?.amount ?? event.ticket_price ?? ticket.amount ?? 0),
+    status: 'completed',
+    created_at: now,
+    updated_at: now,
+  });
+
+  ticket.stripe_session_id = stripeSessionId;
+  ticket.payment_status = 'completed';
+  ticket.status = 'confirmed';
+  persistLocalTicket(ticket);
+  refreshLocalEventMetrics(event.id);
+
+  return NextResponse.json(
+    {
+      success: true,
+      message: 'Payment session created (simulated).',
+      payment: buildLocalPaymentResponse(payment),
+      ticket: buildLocalTicketDetail(ticket, event, getLocalUserById(ticket.user_id)),
+    },
+    { status: 200 }
+  );
+}
+
+function getEventsFallbackResponse(request: NextRequest, route: string, requestBody: any) {
+  const segments = normalizeFallbackRoute(route);
+  const first = segments[0] || '';
+  const second = segments[1] || '';
+  const third = segments[2] || '';
+
+  if (request.method === 'GET' && segments.length === 0) {
+    return NextResponse.json(getLocalEventListResponse(listPublishedLocalEvents()));
+  }
+
+  if (request.method === 'POST' && segments.length === 0) {
+    return createLocalEventResponse(request, requestBody);
+  }
+
+  if (request.method === 'GET' && first === 'overview') {
     return NextResponse.json(buildLocalOverview(request));
   }
 
-  if (normalizedRoute === 'calendars') {
-    if (request.method === 'GET' || request.method === 'HEAD') {
-      const actor = readLocalActor(request);
-      if (!actor) {
-        return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
+  if (request.method === 'GET' && first === 'my-events') {
+    return NextResponse.json(getLocalEventListResponse(buildLocalMyEvents(request)));
+  }
+
+  if (first === 'calendars') {
+    if (segments.length === 1) {
+      if (request.method === 'GET') {
+        const actor = readLocalActor(request);
+        if (!actor) {
+          return NextResponse.json([]);
+        }
+
+        ensureLocalOwnerCalendar(request);
+        return NextResponse.json(
+          getOwnedLocalCalendars(actor.userId).map((calendar) => serializeLocalCalendar(calendar))
+        );
       }
 
-      ensureLocalOwnerCalendar(request);
-      return NextResponse.json(
-        getOwnedLocalCalendars(actor.userId).map((calendar) => serializeLocalCalendar(calendar))
-      );
+      if (request.method === 'POST') {
+        return createLocalCalendarResponse(request, requestBody);
+      }
     }
 
-    if (request.method === 'POST') {
-      return createLocalCalendarResponse(request, requestBody);
-    }
-  }
-
-  if (normalizedRoute.startsWith('calendars/')) {
-    const calendarRoute = normalizedRoute.slice('calendars/'.length);
-    const calendarSegments = calendarRoute.split('/');
-    const calendarSlug = calendarSegments[0];
-    const calendarSubroute = calendarSegments.slice(1).join('/');
-
-    if (calendarSlug && !calendarSubroute && (request.method === 'GET' || request.method === 'HEAD')) {
-      return getLocalCalendarResponse(request, calendarSlug);
-    }
-
-    if (calendarSlug && !calendarSubroute && request.method === 'PUT') {
-      return updateLocalCalendarResponse(request, calendarSlug, requestBody);
-    }
-
-    if (calendarSlug && calendarSubroute === 'events' && (request.method === 'GET' || request.method === 'HEAD')) {
-      return getLocalCalendarEventsResponse(request, calendarSlug);
-    }
-  }
-
-  if (normalizedRoute.startsWith('manage/')) {
-    const subRoute = normalizedRoute.slice(7); // {slug} or {slug}/invite etc.
-    const slug = subRoute.split('/')[0];
-    const event = getLocalEventBySlug(slug);
-    
-    if (!event) {
-      return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
-    }
-
-    if (subRoute.endsWith('/invite')) {
-       return NextResponse.json({ detail: 'Event service is unavailable right now.' }, { status: 503 });
-    }
-    if (subRoute.endsWith('/invitations') || subRoute.endsWith('/guests')) {
-       return NextResponse.json([]);
-    }
-    if (subRoute.endsWith('/blast')) {
-       return NextResponse.json({ detail: 'Event service is unavailable right now.' }, { status: 503 });
-    }
-
-    return NextResponse.json(event);
-  }
-
-  if ((request.method === 'GET' || request.method === 'HEAD') && !normalizedRoute) {
-    return NextResponse.json(listPublishedLocalEvents());
-  }
-
-  if (request.method === 'POST' && !normalizedRoute) {
-    if (!requestBody || typeof requestBody !== 'object') {
-      return NextResponse.json({ detail: 'Invalid event payload.' }, { status: 400 });
-    }
-
-    let selectedCalendar: LocalCalendar | null = null;
-    if (requestBody?.calendar_id !== undefined && requestBody?.calendar_id !== null) {
-      selectedCalendar = getLocalCalendarById(String(requestBody.calendar_id));
-      if (!selectedCalendar) {
-        return NextResponse.json({ detail: 'Calendar not found' }, { status: 404 });
+    if (segments.length === 2) {
+      if (request.method === 'GET') {
+        return getLocalCalendarResponse(request, second);
       }
 
-      const actor = readLocalActor(request);
-      if (!actor) {
-        return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
+      if (request.method === 'PUT') {
+        return updateLocalCalendarResponse(request, second, requestBody);
       }
-
-      if (selectedCalendar.owner_id !== actor.userId) {
-        return NextResponse.json({ detail: 'Not authorized to use this calendar' }, { status: 403 });
-      }
-    } else {
-      selectedCalendar = ensureLocalOwnerCalendar(request);
     }
 
-    const localEvent = persistLocalEvent(buildLocalEvent(requestBody, request, selectedCalendar));
-    
-    // Trigger Notifications
-    const { sendEventCreatedNotifications } = require('@/server/event-notification');
-    const actor = readLocalActor(request);
-    sendEventCreatedNotifications(localEvent, actor);
-
-    return NextResponse.json(localEvent, { status: 201 });
+    if (segments.length === 3 && third === 'events' && request.method === 'GET') {
+      return getLocalCalendarEventsResponse(request, second);
+    }
   }
 
-  if (
-    (request.method === 'PUT' || request.method === 'PATCH') &&
-    normalizedRoute &&
-    !normalizedRoute.startsWith('analytics/') &&
-    !normalizedRoute.endsWith('/analytics') &&
-    !normalizedRoute.endsWith('/community')
-  ) {
-    const userId = requireLocalUserId(request);
-    if (!userId) {
-      return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
-    }
-
-    if (!requestBody || typeof requestBody !== 'object') {
-      return NextResponse.json({ detail: 'Invalid event payload.' }, { status: 400 });
-    }
-
-    const event = getLocalEventByIdOrSlug(normalizedRoute);
-    if (!event) {
-      return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
-    }
-
-    if (event.host_id !== userId) {
-      return NextResponse.json({ detail: 'Not authorized to manage this event' }, { status: 403 });
-    }
-
-    return NextResponse.json(updateLocalEvent(event, requestBody));
+  if (first === 'manage' && second && request.method === 'GET') {
+    return getLocalManageEventResponse(request, second);
   }
 
-  if (request.method === 'GET' && normalizedRoute.startsWith('id/')) {
-    const eventId = normalizedRoute.slice(3);
-    const event = getLocalEventById(eventId);
-    if (!event) {
-      return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
-    }
-    return NextResponse.json(event);
-  }
-
-  if (request.method === 'GET' && normalizedRoute.endsWith('/community')) {
-    const slug = normalizedRoute.slice(0, -'/community'.length);
-    const community = buildLocalCommunity(slug);
+  if (segments.length === 2 && second === 'community' && request.method === 'GET') {
+    const community = buildLocalCommunity(first);
     if (!community) {
       return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
     }
     return NextResponse.json(community);
   }
 
-  if (request.method === 'GET' && normalizedRoute.endsWith('/analytics')) {
-    const eventKey = normalizedRoute.slice(0, -'/analytics'.length);
-    const event = getLocalEventByIdOrSlug(eventKey);
-    if (!event) {
-      return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
+  if (segments.length === 1) {
+    if (request.method === 'GET') {
+      const event = getLocalEventByIdOrSlug(first);
+      if (!event) {
+        return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
+      }
+
+      return NextResponse.json(getLocalEventResponse(event));
     }
-    return NextResponse.json(buildLocalEventAnalytics(event));
+
+    if (request.method === 'PUT') {
+      return updateLocalEventResponse(request, first, requestBody);
+    }
+
+    if (request.method === 'DELETE') {
+      return deleteLocalEventResponse(request, first);
+    }
   }
 
-  if (request.method === 'GET' && normalizedRoute === 'admin/all') {
-    return NextResponse.json(sortEventsByCreatedDesc(listAllLocalEvents()));
+  return null;
+}
+
+function getTicketsFallbackResponse(request: NextRequest, route: string, requestBody: any) {
+  const segments = normalizeFallbackRoute(route);
+  const first = segments[0] || '';
+  const second = segments[1] || '';
+
+  if (request.method === 'GET' && first === 'my-tickets') {
+    const actor = readLocalActor(request);
+    if (!actor) {
+      return NextResponse.json([]);
+    }
+
+    const tickets = Array.from(localStore.ticketsById.values()).filter(
+      (ticket) => ticket.user_id === actor.userId
+    );
+    return NextResponse.json(getLocalTicketListResponse(tickets));
   }
 
-  if (request.method === 'GET' && normalizedRoute === 'admin/stats') {
-    return NextResponse.json(buildLocalAdminStats());
+  if (request.method === 'GET' && first === 'event' && second) {
+    const event = getLocalEventByIdOrSlug(second);
+    if (!event) {
+      return NextResponse.json([]);
+    }
+
+    const tickets = getLocalEventTickets(event.id);
+    return NextResponse.json(getLocalTicketListResponse(tickets));
   }
 
-  if (request.method === 'GET' && normalizedRoute === 'blasts') {
+  if (request.method === 'POST' && first === 'book') {
+    return createLocalTicketResponse(request, requestBody);
+  }
+
+  return null;
+}
+
+function getPaymentsFallbackResponse(request: NextRequest, route: string, requestBody: any) {
+  const segments = normalizeFallbackRoute(route);
+  const first = segments[0] || '';
+
+  if (request.method === 'POST' && first === 'create-session') {
+    return completeLocalPaymentSession(request, requestBody);
+  }
+
+  return null;
+}
+
+function getAttendeesFallbackResponse(request: NextRequest, route: string, requestBody: any) {
+  const segments = normalizeFallbackRoute(route);
+  const first = segments[0] || '';
+  const second = segments[1] || '';
+
+  if (request.method === 'GET' && first === 'event' && second) {
+    const event = getLocalEventByIdOrSlug(second);
+    if (!event) {
+      return NextResponse.json([]);
+    }
+
+    const tickets = getLocalEventTickets(event.id);
+    return NextResponse.json(getLocalAttendeeListResponse(tickets));
+  }
+
+  return null;
+}
+
+function getBlastsFallbackResponse(request: NextRequest, route: string) {
+  if (request.method !== 'GET') {
+    return null;
+  }
+
+  const eventId = String(request.nextUrl.searchParams.get('event_id') || '').trim();
+  if (!eventId) {
     return NextResponse.json([]);
   }
 
-  if (request.method === 'GET' && normalizedRoute === 'invitations/suggestions') {
-    return NextResponse.json({ detail: 'Event service is unavailable right now.' }, { status: 503 });
+  const event = getLocalEventByIdOrSlug(eventId);
+  if (!event) {
+    return NextResponse.json([]);
   }
 
-  if (request.method === 'GET' && normalizedRoute) {
-    const event = getLocalEventByIdOrSlug(normalizedRoute);
-    if (!event) {
-      return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
-    }
-    return NextResponse.json(event);
-  }
-
-  return NextResponse.json(
-    {
-      detail: 'Event service is unavailable right now.',
-    },
-    { status: 503 }
-  );
+  return NextResponse.json([]);
 }
 
 function getUserFallbackResponse(request: NextRequest, route: string, requestBody: any) {
@@ -1479,7 +1749,10 @@ function getUserFallbackResponse(request: NextRequest, route: string, requestBod
     });
   }
 
-  if (request.method === 'POST' && normalizedRoute === 'signup') {
+  if (
+    request.method === 'POST' &&
+    (normalizedRoute === 'signup' || normalizedRoute === 'auth/signup')
+  ) {
     const email = String(requestBody?.email || '').trim().toLowerCase();
     if (!email) {
       return NextResponse.json({ detail: 'Email is required.' }, { status: 400 });
@@ -1506,7 +1779,17 @@ function getUserFallbackResponse(request: NextRequest, route: string, requestBod
     );
   }
 
-  if (request.method === 'POST' && normalizedRoute === 'login') {
+  if (
+    request.method === 'POST' &&
+    (normalizedRoute === 'login-history' || normalizedRoute === 'auth/login-history')
+  ) {
+    return NextResponse.json({
+      success: true,
+      message: 'Login audit recorded (simulated)',
+    });
+  }
+
+  if (request.method === 'POST' && (normalizedRoute === 'login' || normalizedRoute === 'auth/login')) {
     const email = String(requestBody?.email || '').trim().toLowerCase();
     const existingUser = getLocalUserByEmail(email);
     const user =
@@ -1597,452 +1880,6 @@ function getUserFallbackResponse(request: NextRequest, route: string, requestBod
   return NextResponse.json(
     {
       detail: 'Users service is unavailable right now.',
-    },
-    { status: 503 }
-  );
-}
-
-function getTicketFallbackResponse(request: NextRequest, route: string, requestBody: any) {
-  const normalizedRoute = route.replace(/^\/+|\/+$/g, '');
-  const actor = readLocalActor(request);
-
-  if (request.method === 'POST' && normalizedRoute === 'book') {
-    if (!actor) {
-      return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
-    }
-
-    const eventId = String(requestBody?.event_id || '').trim();
-    if (!eventId) {
-      return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
-    }
-
-    const event = getLocalEventByIdOrSlug(eventId);
-    if (!event) {
-      return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
-    }
-
-    const existingTicket = getLocalEventTickets(event.id).find(
-      (ticket) => ticket.user_id === actor.userId && !['cancelled', 'rejected'].includes(ticket.status)
-    );
-    if (existingTicket) {
-      return NextResponse.json(
-        {
-          detail: 'You already have a ticket or waitlist entry for this event',
-        },
-        { status: 400 }
-      );
-    }
-
-    const reservedCount = getLocalEventTickets(event.id).filter((ticket) =>
-      ['confirmed', 'pending_payment', 'pending_approval'].includes(ticket.status)
-    ).length;
-    const soldOut = Boolean(event.max_seats && event.max_seats > 0 && reservedCount >= event.max_seats);
-    const ticketType = event.is_paid ? 'paid' : 'free';
-    const ticketRef = `EVTLY-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
-    const status = soldOut ? 'waitlisted' : event.is_paid ? 'pending_payment' : 'confirmed';
-    const paymentStatus = soldOut ? 'none' : event.is_paid ? 'pending' : 'none';
-    const profile = ensureLocalUser(actor.userId, {
-      email: actor.email,
-      name: actor.name,
-    });
-    const ticket = persistLocalTicket({
-      id: crypto.randomUUID(),
-      ticket_ref: ticketRef,
-      event_id: event.id,
-      user_id: actor.userId,
-      status,
-      ticket_type: ticketType,
-      payment_status: paymentStatus,
-      stripe_session_id: '',
-      qr_code: status === 'waitlisted' ? '' : buildLocalQrCode(ticketRef, event.id, actor.userId),
-      checked_in: false,
-      checked_in_at: null,
-      created_at: new Date().toISOString(),
-      amount: Number(event.ticket_price || 0),
-    });
-    refreshLocalEventMetrics(event.id);
-
-    return NextResponse.json(buildLocalTicketDetail(ticket, event, profile), { status: 201 });
-  }
-
-  if (request.method === 'GET' && normalizedRoute === 'my-tickets') {
-    if (!actor) {
-      return NextResponse.json([]);
-    }
-
-    const tickets = Array.from(localStore.ticketsById.values())
-      .filter((ticket) => ticket.user_id === actor.userId)
-      .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
-      .map((ticket) => buildLocalTicketDetail(ticket, getLocalEventById(ticket.event_id), getLocalUserById(ticket.user_id)));
-    return NextResponse.json(tickets);
-  }
-
-  if (request.method === 'GET' && normalizedRoute === 'by-ref') {
-    return NextResponse.json({ detail: 'Ticket not found' }, { status: 404 });
-  }
-
-  if (request.method === 'GET' && normalizedRoute.startsWith('by-ref/')) {
-    const ticketRef = normalizedRoute.slice('by-ref/'.length);
-    const ticket = getLocalTicketByRef(ticketRef);
-    if (!ticket) {
-      return NextResponse.json({ detail: 'Ticket not found' }, { status: 404 });
-    }
-    return NextResponse.json(
-      buildLocalTicketDetail(ticket, getLocalEventById(ticket.event_id), getLocalUserById(ticket.user_id))
-    );
-  }
-
-  if (request.method === 'GET' && normalizedRoute.startsWith('event/')) {
-    const eventRoute = normalizedRoute.slice('event/'.length);
-    const [eventId, subRoute = ''] = eventRoute.split('/', 2);
-    const event = getLocalEventByIdOrSlug(eventId);
-    if (!event) {
-      return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
-    }
-
-    const eventHost = actor ? getLocalUserById(actor.userId) : null;
-    if (!eventHost || event.host_id !== actor?.userId) {
-      return NextResponse.json({ detail: 'Not authorized to view this event' }, { status: 403 });
-    }
-
-    const tickets = getLocalEventTickets(event.id)
-      .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
-      .map((ticket) => buildLocalTicketDetail(ticket, event, getLocalUserById(ticket.user_id)));
-
-    if (subRoute === 'summary') {
-      const confirmed = tickets.filter((ticket) => ticket.status === 'confirmed').length;
-      const waitlisted = tickets.filter((ticket) => ticket.status === 'waitlisted').length;
-      const checkedIn = tickets.filter((ticket) => ticket.checked_in).length;
-      const paidConfirmed = tickets.filter(
-        (ticket) => ticket.status === 'confirmed' && ticket.ticket_type === 'paid' && ticket.payment_status === 'completed'
-      ).length;
-
-      return NextResponse.json({
-        event_id: event.id,
-        title: event.title,
-        slug: event.slug,
-        confirmed,
-        waitlisted,
-        checked_in: checkedIn,
-        ticket_sales: paidConfirmed * Number(event.ticket_price || 0),
-        reserved: tickets.filter((ticket) =>
-          ['confirmed', 'pending_payment', 'pending_approval'].includes(ticket.status)
-        ).length,
-      });
-    }
-
-    if (subRoute === 'checked-in') {
-      return NextResponse.json(tickets.filter((ticket) => ticket.checked_in));
-    }
-
-    return NextResponse.json(tickets);
-  }
-
-  if (request.method === 'PUT' && normalizedRoute.startsWith('manage/')) {
-    if (!actor) {
-      return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
-    }
-
-    const ticketId = normalizedRoute.slice('manage/'.length);
-    const ticket = getLocalTicketById(ticketId);
-    if (!ticket) {
-      return NextResponse.json({ detail: 'Ticket not found' }, { status: 404 });
-    }
-
-    const event = getLocalEventById(ticket.event_id);
-    if (!event || event.host_id !== actor.userId) {
-      return NextResponse.json({ detail: 'Not authorized to manage this ticket' }, { status: 403 });
-    }
-
-    if (!requestBody || typeof requestBody !== 'object') {
-      return NextResponse.json({ detail: 'Invalid ticket payload.' }, { status: 400 });
-    }
-
-    ticket.status = String(requestBody?.status || ticket.status);
-    if (['cancelled', 'rejected'].includes(ticket.status)) {
-      ticket.checked_in = false;
-      ticket.checked_in_at = null;
-      if (ticket.payment_status === 'pending') {
-        ticket.payment_status = 'failed';
-      }
-    }
-    if (ticket.status === 'confirmed' && ticket.payment_status === 'pending') {
-      ticket.payment_status = 'completed';
-    }
-
-    persistLocalTicket(ticket);
-    refreshLocalEventMetrics(event.id);
-    return NextResponse.json(buildLocalTicketDetail(ticket, event, getLocalUserById(ticket.user_id)));
-  }
-
-  return NextResponse.json(
-    {
-      detail: 'Ticket service is unavailable right now.',
-    },
-    { status: 503 }
-  );
-}
-
-function getPaymentFallbackResponse(request: NextRequest, route: string, requestBody: any) {
-  const normalizedRoute = route.replace(/^\/+|\/+$/g, '');
-  const actor = readLocalActor(request);
-
-  if (request.method === 'POST' && normalizedRoute === 'create-session') {
-    if (!actor) {
-      return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
-    }
-
-    const eventId = String(requestBody?.event_id || '').trim();
-    const ticketRef = String(requestBody?.ticket_ref || '').trim();
-    if (!eventId || !ticketRef) {
-      return NextResponse.json({ detail: 'Ticket not found' }, { status: 404 });
-    }
-
-    const event = getLocalEventByIdOrSlug(eventId);
-    const ticket = getLocalTicketByRef(ticketRef);
-    if (!event || !ticket || ticket.event_id !== event.id) {
-      return NextResponse.json({ detail: 'Ticket not found for this event' }, { status: 404 });
-    }
-    if (ticket.user_id !== actor.userId) {
-      return NextResponse.json({ detail: 'Not authorized to manage this ticket' }, { status: 403 });
-    }
-    if (ticket.status === 'waitlisted') {
-      return NextResponse.json({ detail: 'Waitlisted tickets cannot be paid until approved' }, { status: 400 });
-    }
-
-    const existingPayment = Array.from(localStore.paymentsBySessionId.values()).find(
-      (payment) => payment.ticket_ref === ticketRef && payment.user_id === actor.userId && payment.status === 'succeeded'
-    );
-    if (existingPayment) {
-      return NextResponse.json({
-        success: true,
-        url: `${getFrontendBaseUrl(request)}/payment-success?session_id=${existingPayment.stripe_session_id}`,
-      });
-    }
-
-    const sessionId = `dev_${ticketRef}_${crypto.randomUUID().slice(0, 8)}`;
-    const now = new Date().toISOString();
-    const payment = persistLocalPayment({
-      id: crypto.randomUUID(),
-      user_id: actor.userId,
-      ticket_ref: ticketRef,
-      event_id: event.id,
-      stripe_session_id: sessionId,
-      amount: Number(event.ticket_price || requestBody?.amount || 0),
-      status: 'succeeded',
-      created_at: now,
-      updated_at: now,
-    });
-
-    ticket.status = 'confirmed';
-    ticket.payment_status = 'completed';
-    ticket.ticket_type = 'paid';
-    ticket.stripe_session_id = sessionId;
-    ticket.qr_code = ticket.qr_code || buildLocalQrCode(ticket.ticket_ref, event.id, actor.userId);
-    persistLocalTicket(ticket);
-    refreshLocalEventMetrics(event.id);
-
-    return NextResponse.json({
-      success: true,
-      url: `${getFrontendBaseUrl(request)}/payment-success?session_id=${payment.stripe_session_id}`,
-    });
-  }
-
-  if (request.method === 'GET' && normalizedRoute === 'my-payments') {
-    if (!actor) {
-      return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
-    }
-
-    const payments = Array.from(localStore.paymentsBySessionId.values())
-      .filter((payment) => payment.user_id === actor.userId)
-      .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
-      .map((payment) => buildLocalPaymentResponse(payment));
-    return NextResponse.json({ success: true, data: payments });
-  }
-
-  if (request.method === 'POST' && normalizedRoute.startsWith('refund/')) {
-    if (!actor) {
-      return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
-    }
-
-    const ticketRef = normalizedRoute.slice('refund/'.length);
-    const payment = Array.from(localStore.paymentsBySessionId.values()).find(
-      (entry) => entry.ticket_ref === ticketRef && entry.user_id === actor.userId
-    );
-    if (!payment) {
-      return NextResponse.json({ detail: 'Payment not found' }, { status: 404 });
-    }
-    if (payment.status === 'refunded') {
-      return NextResponse.json({ success: true, message: 'Payment already refunded' });
-    }
-
-    const ticket = getLocalTicketByRef(ticketRef);
-    const event = ticket ? getLocalEventById(ticket.event_id) : null;
-    payment.status = 'refunded';
-    payment.updated_at = new Date().toISOString();
-    persistLocalPayment(payment);
-
-    if (ticket) {
-      ticket.status = 'cancelled';
-      ticket.payment_status = 'refunded';
-      ticket.checked_in = false;
-      ticket.checked_in_at = null;
-      persistLocalTicket(ticket);
-    }
-    if (event) {
-      refreshLocalEventMetrics(event.id);
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'Refund processed',
-      refund_id: payment.stripe_session_id,
-    });
-  }
-
-  return NextResponse.json(
-    {
-      detail: 'Payment service is unavailable right now.',
-    },
-    { status: 503 }
-  );
-}
-
-function getAttendeeFallbackResponse(request: NextRequest, route: string, requestBody: any) {
-  const normalizedRoute = route.replace(/^\/+|\/+$/g, '');
-  const actor = readLocalActor(request);
-
-  if (request.method === 'POST' && normalizedRoute === 'check-in') {
-    if (!actor) {
-      return NextResponse.json({ detail: 'Not authenticated' }, { status: 401 });
-    }
-
-    if (!requestBody || typeof requestBody !== 'object') {
-      return NextResponse.json({ detail: 'Invalid check-in payload.' }, { status: 400 });
-    }
-
-    const event = getLocalEventByIdOrSlug(String(requestBody?.event_id || ''));
-    if (!event) {
-      return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
-    }
-    if (event.host_id !== actor.userId) {
-      return NextResponse.json({ detail: 'Not authorized to manage this event' }, { status: 403 });
-    }
-
-    const ticket = getLocalTicketByRef(String(requestBody?.ticket_ref || ''));
-    if (!ticket || ticket.event_id !== event.id) {
-      return NextResponse.json({ detail: 'Ticket not found' }, { status: 404 });
-    }
-    if (ticket.status !== 'confirmed') {
-      return NextResponse.json({ detail: 'Only confirmed attendees can be checked in' }, { status: 400 });
-    }
-    if (ticket.checked_in) {
-      return NextResponse.json({ detail: 'Attendee already checked in' }, { status: 400 });
-    }
-
-    const now = new Date().toISOString();
-    ticket.checked_in = true;
-    ticket.checked_in_at = now;
-    persistLocalTicket(ticket);
-    refreshLocalEventMetrics(event.id);
-
-    return NextResponse.json({
-      success: true,
-      message: 'Attendee checked in successfully',
-      event_title: event.title,
-      attendee_id: ticket.id,
-      checked_in_at: now,
-    });
-  }
-
-  if (request.method === 'GET' && normalizedRoute === 'stats') {
-    const hostEvents = actor
-      ? Array.from(localStore.eventsById.values()).filter((event) => event.host_id === actor.userId)
-      : [];
-    const eventIds = new Set(hostEvents.map((event) => event.id));
-    const tickets = Array.from(localStore.ticketsById.values()).filter((ticket) => eventIds.has(ticket.event_id));
-    const confirmed = tickets.filter((ticket) => ticket.status === 'confirmed');
-    const waitlisted = tickets.filter((ticket) => ticket.status === 'waitlisted');
-    const checkedIn = tickets.filter((ticket) => ticket.checked_in);
-    const eventPriceMap = new Map(hostEvents.map((event) => [event.id, Number(event.ticket_price || 0)]));
-    const revenue = tickets.reduce((sum, ticket) => {
-      if (ticket.status !== 'confirmed' || ticket.ticket_type !== 'paid' || ticket.payment_status !== 'completed') {
-        return sum;
-      }
-      return sum + (eventPriceMap.get(ticket.event_id) || 0);
-    }, 0);
-
-    return NextResponse.json({
-      total_events: hostEvents.length,
-      total_attendees: tickets.length,
-      confirmed_attendees: confirmed.length,
-      waitlisted_attendees: waitlisted.length,
-      checked_in_count: checkedIn.length,
-      total_revenue: revenue,
-    });
-  }
-
-  if (request.method === 'GET' && normalizedRoute.startsWith('event/') && normalizedRoute.endsWith('/checked-in')) {
-    const eventId = normalizedRoute.slice('event/'.length, -'/checked-in'.length);
-    const event = getLocalEventByIdOrSlug(eventId);
-    if (!event) {
-      return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
-    }
-    if (!actor || event.host_id !== actor.userId) {
-      return NextResponse.json({ detail: 'Not authorized to manage this event' }, { status: 403 });
-    }
-
-    const attendees = getLocalEventTickets(event.id)
-      .filter((ticket) => ticket.checked_in)
-      .sort((left, right) => new Date(left.checked_in_at || left.created_at).getTime() - new Date(right.checked_in_at || right.created_at).getTime())
-      .map((ticket) => buildLocalAttendeeResponse(ticket, event, getLocalUserById(ticket.user_id)));
-    return NextResponse.json(attendees);
-  }
-
-  if (request.method === 'GET' && normalizedRoute.startsWith('event/')) {
-    const eventId = normalizedRoute.slice('event/'.length).split('/')[0];
-    const event = getLocalEventByIdOrSlug(eventId);
-    if (!event) {
-      return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
-    }
-    if (!actor || event.host_id !== actor.userId) {
-      return NextResponse.json({ detail: 'Not authorized to manage this event' }, { status: 403 });
-    }
-
-    const attendees = getLocalEventTickets(event.id)
-      .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
-      .map((ticket) => buildLocalAttendeeResponse(ticket, event, getLocalUserById(ticket.user_id)));
-    return NextResponse.json(attendees);
-  }
-
-  if (request.method === 'GET' && normalizedRoute.startsWith('public/event/')) {
-    const eventId = normalizedRoute.slice('public/event/'.length);
-    const event = getLocalEventByIdOrSlug(eventId);
-    if (!event) {
-      return NextResponse.json({ detail: 'Event not found' }, { status: 404 });
-    }
-
-    const allTickets = getLocalEventTickets(event.id);
-    const attendees = allTickets
-      .filter((ticket) => ticket.status === 'confirmed')
-      .slice(0, 8)
-      .map((ticket) => buildLocalAttendeeResponse(ticket, event, getLocalUserById(ticket.user_id)));
-    return NextResponse.json({
-      event_id: event.id,
-      confirmed_count: allTickets.filter((ticket) => ticket.status === 'confirmed').length,
-      waitlisted_count: allTickets.filter((ticket) => ticket.status === 'waitlisted').length,
-      checked_in_count: allTickets.filter((ticket) => ticket.checked_in).length,
-      attendees,
-    });
-  }
-
-  if (request.method === 'GET' && normalizedRoute.startsWith('internal/on-ticket-purchased')) {
-    return NextResponse.json({ ok: true });
-  }
-
-  return NextResponse.json(
-    {
-      detail: 'Attendee service is unavailable right now.',
     },
     { status: 503 }
   );

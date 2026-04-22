@@ -47,6 +47,16 @@ interface EventData {
   community_enabled?: boolean;
 }
 
+interface CommunityData {
+  attendees?: Array<{
+    id: string;
+    name: string;
+    bio?: string;
+    profile_image?: string;
+    links?: string[];
+  }>;
+}
+
 function getFrontendOrigin() {
   const configuredOrigin = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_FRONTEND_URL;
   if (configuredOrigin) {
@@ -57,7 +67,7 @@ function getFrontendOrigin() {
     }
   }
 
-  return 'https://growthlab.local'; // Fallback for serverside origin resolution
+  return 'https://growthlab.local'; // Default for server-side origin resolution
 }
 
 async function getRequestOrigin() {
@@ -80,14 +90,14 @@ async function getEventDetails(slug: string): Promise<EventData | null> {
       if (res.status === 404) return null;
       throw new Error('Failed to fetch event details');
     }
-    return res.json();
+    return (await res.json()) as EventData;
   } catch (error) {
     console.error('Error fetching event:', error);
     return null;
   }
 }
 
-async function getCommunity(slug: string) {
+async function getCommunity(slug: string): Promise<CommunityData | null> {
   try {
     const origin = await getRequestOrigin();
     const res = await fetch(new URL(`/api/events/${slug}/community`, origin), {
@@ -96,7 +106,7 @@ async function getCommunity(slug: string) {
     if (!res.ok) {
       return null;
     }
-    return res.json();
+    return (await res.json()) as CommunityData;
   } catch (error) {
     console.error('Error fetching community:', error);
     return null;
