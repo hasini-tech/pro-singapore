@@ -1,7 +1,14 @@
 import { z } from 'zod';
 import { createEnv } from '@t3-oss/env-nextjs';
 
-const isProduction = process.env.NODE_ENV === 'production';
+const fallbackNextAuthUrl =
+  process.env.NEXTAUTH_URL ||
+  process.env.AUTH_URL ||
+  process.env.URL ||
+  process.env.DEPLOY_PRIME_URL ||
+  process.env.DEPLOY_URL ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined) ||
+  'http://localhost:3000';
 
 export const env = createEnv({
   /*
@@ -9,18 +16,14 @@ export const env = createEnv({
    */
   server: {
     NODE_ENV: z.enum(['development', 'test', 'production']),
-    NEXTAUTH_SECRET: isProduction
-      ? z.string().min(1)
-      : z.preprocess(
-          (value) => (value === '' ? undefined : value),
-          z.string().min(1).optional()
-        ),
-    NEXTAUTH_URL: isProduction
-      ? z.string().url()
-      : z.preprocess(
-          (value) => (value === '' ? undefined : value),
-          z.string().url().default('http://localhost:3000')
-        ),
+    NEXTAUTH_SECRET: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(1).optional()
+    ),
+    NEXTAUTH_URL: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().url().default(fallbackNextAuthUrl)
+    ),
 
     // email
     SMTP_HOST: z.string().optional(),

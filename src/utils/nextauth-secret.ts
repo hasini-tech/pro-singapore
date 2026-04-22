@@ -6,8 +6,20 @@ const LEGACY_NEXTAUTH_SECRETS = [
   'dev-secret-change-me',
   'pYn8fR2kL5mN9qS1vX4zW7hJ0gB3eD6aC9xY2zL5mV8',
 ] as const;
+let hasWarnedAboutMissingSecret = false;
 
 export function getNextAuthSecret() {
+  if (
+    process.env.NODE_ENV === 'production' &&
+    !configuredNextAuthSecret &&
+    !hasWarnedAboutMissingSecret
+  ) {
+    hasWarnedAboutMissingSecret = true;
+    console.warn(
+      'NEXTAUTH_SECRET is not configured; using the built-in fallback secret. Set NEXTAUTH_SECRET in production.'
+    );
+  }
+
   return configuredNextAuthSecret || DEVELOPMENT_NEXTAUTH_SECRET;
 }
 
