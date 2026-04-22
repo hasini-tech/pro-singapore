@@ -70,19 +70,37 @@ function getFrontendOrigin() {
   return 'https://growthlab.local'; // Default for server-side origin resolution
 }
 
-async function getRequestOrigin() {
-  const requestHeaders = await headers();
-  const forwardedHost = requestHeaders.get('x-forwarded-host') || requestHeaders.get('host');
-  const forwardedProto = requestHeaders.get('x-forwarded-proto') || 'https';
-  if (forwardedHost) {
-    return `${forwardedProto}://${forwardedHost}`;
+async function getRequestOrigin(): Promise<string | null> {
+  try {
+    const requestHeaders = await headers();
+    const forwardedHost =
+      requestHeaders.get('x-forwarded-host') || requestHeaders.get('host');
+    const forwardedProto = requestHeaders.get('x-forwarded-proto') || 'https';
+
+    if (forwardedHost) {
+      return `${forwardedProto}://${forwardedHost}`;
+    }
+  } catch {
+    // During production builds there may be no active request context.
   }
+
+  const configuredOrigin =
+    process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_FRONTEND_URL;
+
+  if (!configuredOrigin) {
+    return null;
+  }
+
   return getFrontendOrigin();
 }
 
 async function getEventDetails(slug: string): Promise<EventData | null> {
   try {
     const origin = await getRequestOrigin();
+    if (!origin) {
+      return null;
+    }
+
     const res = await fetch(new URL(`/api/events/${slug}`, origin), {
       cache: 'no-store',
     });
@@ -100,6 +118,10 @@ async function getEventDetails(slug: string): Promise<EventData | null> {
 async function getCommunity(slug: string): Promise<CommunityData | null> {
   try {
     const origin = await getRequestOrigin();
+    if (!origin) {
+      return null;
+    }
+
     const res = await fetch(new URL(`/api/events/${slug}/community`, origin), {
       cache: 'no-store',
     });
@@ -130,7 +152,12 @@ function buildGoogleCalendarUrl(event: EventData) {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const resolvedParams = await params;
   const event = await getEventDetails(resolvedParams.slug);
-  if (!event) return { title: 'Event Not Found | GrowthLab' };
+  if (!event) {
+    return {
+      title: 'Event | GrowthLab',
+      description: 'Discover GrowthLab events and community experiences.',
+    };
+  }
 
   return {
     title: `${event.title} | GrowthLab`,
@@ -152,7 +179,7 @@ export default async function EventDetailsPage({ params }: { params: Promise<{ s
   }
 
   const eventDate = new Date(event.date);
-  const shareUrl = event.share_url || `${origin}/events/${event.slug}`;
+  const shareUrl = event.share_url || `${origin || getFrontendOrigin()}/events/${event.slug}`;
   const googleCalendarUrl = buildGoogleCalendarUrl(event);
   const communityAttendees = community?.attendees || [];
   const speakerList = event.speakers || [];
