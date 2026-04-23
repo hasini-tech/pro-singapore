@@ -10,11 +10,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    // We let the NextAuth middleware handle the redirect logic.
+    // We let the NextAuth proxy handle the redirect logic.
     // AuthGuard here only ensures the custom context is synced before rendering.
   }, [isAuthenticated, isLoading, pathname, router]);
 
-  // Define private paths that require authentication (keep in sync with middleware)
+  // Define private paths that require authentication (keep in sync with proxy)
   const privatePaths = ['/feed', '/business', '/connect', '/profile'];
   const isPrivatePath = privatePaths.some((path) => pathname.startsWith(path));
 
@@ -37,6 +37,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
-  // Otherwise, return null (middleware handles redirect)
+  // Otherwise, return null (proxy handles redirect)
   return null;
 }

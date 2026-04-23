@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { decodeNextAuthJwt, getNextAuthSecret } from '@/utils/nextauth-secret';
 
 export default withAuth(
-  function middleware(req) {
+  function proxy(req) {
     return NextResponse.next();
   },
   {
@@ -14,34 +14,25 @@ export default withAuth(
     callbacks: {
       authorized: ({ req, token }) => {
         const { pathname } = req.nextUrl;
-        // Define private paths that require authentication
-        const privatePaths = [
-          '/feed',
-          '/business',
-          '/connect',
-          '/profile',
-        ];
+        const privatePaths = ['/feed', '/business', '/connect', '/profile'];
+        const isPrivatePath = privatePaths.some((path) =>
+          pathname.startsWith(path)
+        );
 
-        // Check if the path is private
-        const isPrivatePath = privatePaths.some((path) => pathname.startsWith(path));
-
-        // If it's a private path, require authentication
         if (isPrivatePath) {
           return !!token;
         }
 
-        // All other paths are public by default
         return true;
       },
     },
     pages: {
-      signIn: '/signin', // Redirect here if unauthenticated on a private route
+      signIn: '/signin',
     },
   }
 );
 
 export const config = {
-  // Apply middleware to all routes except api, _next/static, _next/image, favicon.ico
   matcher: [
     '/((?!api/auth|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|avif)$).*)',
   ],
