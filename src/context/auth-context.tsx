@@ -73,6 +73,18 @@ const AUTH_STORAGE_KEYS = [
   'evently_user',
 ];
 
+function isStoredUser(value: unknown): value is User {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.email === 'string'
+  );
+}
+
 function activeStorage(): Storage {
   if (typeof window === 'undefined') return localStorage;
   return localStorage.getItem('access_token') ? localStorage : sessionStorage;
@@ -157,7 +169,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setRefreshTokenState(storage.getItem('refresh_token'));
         try {
           const storedUser = storage.getItem('user');
-          if (storedUser) setUser(JSON.parse(storedUser));
+          if (storedUser) {
+            const parsedUser: unknown = JSON.parse(storedUser);
+            if (isStoredUser(parsedUser)) {
+              setUser(parsedUser);
+            }
+          }
         } catch (err) {
           // Ignore parsing errors
         }
