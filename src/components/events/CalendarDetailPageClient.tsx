@@ -280,7 +280,7 @@ export default function CalendarDetailPageClient({ slug }: { slug: string }) {
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
-      router.replace('/login');
+      router.replace('/signin');
       return;
     }
 
