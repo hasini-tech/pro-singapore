@@ -595,6 +595,20 @@ export default function CreateEventBuilderPage() {
   },[]);
 
   useEffect(()=>{
+    if (authLoading) {
+      return;
+    }
+
+    if (!user) {
+      router.replace('/create-event/continue?redirect=/create-event/form');
+    }
+  }, [authLoading, router, user]);
+
+  useEffect(()=>{
+    if (authLoading || !user) {
+      return;
+    }
+
     (async()=>{
       try {
         const res=await api.get<OwnerCalendar[]>('/events/calendars');
@@ -604,7 +618,7 @@ export default function CreateEventBuilderPage() {
         if(fb) setSelectedCalendarId(fb.id);
       } catch {}
     })();
-  },[searchParams]);
+  },[authLoading, searchParams, user]);
 
   const setField=useCallback(<K extends keyof CreateEventForm>(k:K,v:CreateEventForm[K])=>
     setForm(prev=>({...prev,[k]:v})),[]);
@@ -642,6 +656,22 @@ export default function CreateEventBuilderPage() {
 
   // common sub-component props
   const pickerProps={C};
+
+  if (authLoading) {
+    return (
+      <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:'32px',background:pageBg,color:C.text}}>
+        <div style={{fontSize:16,fontWeight:700}}>Loading event builder...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:'32px',background:pageBg,color:C.text}}>
+        <div style={{fontSize:16,fontWeight:700}}>Redirecting to secure sign-in...</div>
+      </div>
+    );
+  }
 
   return (
     <div style={{minHeight:'100vh',background:pageBg,fontFamily:"'Inter','Outfit',sans-serif",color:C.text,position:'relative',transition:'background 0.4s'}} onClick={()=>{setActive(null);setShowThemePanel(false);}}>

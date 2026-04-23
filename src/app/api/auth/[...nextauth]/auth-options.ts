@@ -183,7 +183,29 @@ const nextAuthSecret = getNextAuthSecret();
 if (!process.env.NEXTAUTH_URL) {
   process.env.NEXTAUTH_URL = env.NEXTAUTH_URL;
 }
-const authProxyBaseUrl = new URL('/api/users', env.NEXTAUTH_URL).toString();
+
+function getAuthProxyBaseUrl(
+  req?: { headers?: Record<string, string | string[] | undefined> }
+) {
+  const forwardedProto =
+    firstHeader(req?.headers, 'x-forwarded-proto') ||
+    firstHeader(req?.headers, 'x-forwarded-protocol');
+  const forwardedHost =
+    firstHeader(req?.headers, 'x-forwarded-host') ||
+    firstHeader(req?.headers, 'host');
+
+  if (forwardedHost) {
+    const protocol =
+      forwardedProto ||
+      (forwardedHost.includes('localhost') || forwardedHost.startsWith('127.0.0.1')
+        ? 'http'
+        : 'https');
+
+    return `${protocol}://${forwardedHost.replace(/\/$/, '')}/api/users`;
+  }
+
+  return new URL('/api/users', env.NEXTAUTH_URL).toString();
+}
 
 export const authOptions: NextAuthOptions = {
   secret: nextAuthSecret,
@@ -277,6 +299,7 @@ export const authOptions: NextAuthOptions = {
             emailAddress: credentials.email,
             password: credentials.password,
           });
+          const authProxyBaseUrl = getAuthProxyBaseUrl(req);
           let sawLoginResponse = false;
           let lastLoginError: unknown;
 

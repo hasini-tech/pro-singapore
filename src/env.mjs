@@ -44,10 +44,10 @@ export const env = createEnv({
   client: {
     NEXT_PUBLIC_APP_NAME: z.string().optional(),
     NEXT_PUBLIC_GOOGLE_MAP_API_KEY: z.string().optional().default(''),
-    NEXT_PUBLIC_API_BASE_URL: z
-      .string()
-      .url()
-      .default('http://127.0.0.1:8000'),
+    NEXT_PUBLIC_API_BASE_URL: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().url().optional()
+    ),
   },
   runtimeEnv: process.env,
 });
