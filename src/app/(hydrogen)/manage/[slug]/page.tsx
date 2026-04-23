@@ -900,7 +900,7 @@ export default function ManageEventPage() {
                       <div style={{ ...inviteCircle, background: "#f3e8ff", top: 20, right: 10 }}><Users size={16} color="#9333ea" /></div>
                    </div>
                    <h3 style={{ fontSize: "1.5rem", fontWeight: 800, margin: "0 0 12px" }}>Start Inviting Guests</h3>
-                   <p style={{ color: "var(--manage-muted)", fontSize: "1rem", lineHeight: 1.5, maxWidth: 320, margin: "0 0 32px" }}>After you host an event, you'll find past guests here.</p>
+                  <p style={{ color: "var(--manage-muted)", fontSize: "1rem", lineHeight: 1.5, maxWidth: 320, margin: "0 0 32px" }}>After you host an event, you&apos;ll find past guests here.</p>
                    <button style={{ ...actionPrimary, background: "var(--manage-fg)", padding: "14px 40px", borderRadius: 12, marginBottom: 16 }}><Mail size={18} /> Enter Emails</button>
                    <div style={{ fontSize: "0.85rem", color: "#ccc", margin: "10px 0" }}>or</div>
                    <button style={{ ...actionPrimary, background: "#4285f4", padding: "14px 40px", borderRadius: 12 }}><Zap size={18} /> Import from Google</button>
