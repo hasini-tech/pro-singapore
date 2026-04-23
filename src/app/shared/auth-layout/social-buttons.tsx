@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import { Button } from 'rizzui';
 import { FcGoogle } from 'react-icons/fc';
 import { PiLinkedinLogoFill } from 'react-icons/pi';
 import OrSeparation from './or-separation';
 import { routes } from '@/config/routes';
+import { getSafeRedirectPath } from '@/utils/get-safe-redirect-path';
 
 type SocialProviderId = 'google' | 'linkedin';
 
@@ -20,6 +22,13 @@ export default function SocialButtons({
   isSignIn?: boolean;
 }) {
   const [providers, setProviders] = useState<SocialProviderId[]>([]);
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams?.get('callbackUrl') ?? null;
+  const redirectPath = searchParams?.get('redirect') ?? null;
+  const redirectTarget = getSafeRedirectPath(
+    callbackUrl ?? redirectPath,
+    routes.feed
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -72,7 +81,7 @@ export default function SocialButtons({
           <Button
             variant="outline"
             className="h-11 w-full"
-            onClick={() => signIn('google', { callbackUrl: routes.feed })}
+            onClick={() => signIn('google', { callbackUrl: redirectTarget })}
           >
             <FcGoogle className="me-2 h-5 w-5 shrink-0" />
             <span className="truncate">Sign in with Google</span>
@@ -82,7 +91,7 @@ export default function SocialButtons({
           <Button
             variant="outline"
             className="h-11 w-full"
-            onClick={() => signIn('linkedin', { callbackUrl: routes.feed })}
+            onClick={() => signIn('linkedin', { callbackUrl: redirectTarget })}
           >
             <PiLinkedinLogoFill className="me-2 h-5 w-5 shrink-0 text-[#0077B5]" />
             <span className="truncate">Sign in with LinkedIn</span>

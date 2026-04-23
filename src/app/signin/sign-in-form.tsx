@@ -25,18 +25,22 @@ export default function SignInForm() {
   const searchParams = useSearchParams();
   const { status } = useSession();
   const callbackUrl = searchParams?.get('callbackUrl') ?? null;
+  const redirectPath = searchParams?.get('redirect') ?? null;
+  const redirectTarget = getSafeRedirectPath(
+    callbackUrl ?? redirectPath,
+    routes.feed
+  );
 
   useEffect(() => {
     if (status === 'authenticated') {
-      router.replace(getSafeRedirectPath(callbackUrl, routes.feed));
+      router.replace(redirectTarget);
     }
-  }, [callbackUrl, router, status]);
+  }, [redirectTarget, router, status]);
 
   const onSubmit: SubmitHandler<LoginSchema> = async (data) => {
     setIsLoading(true);
 
     try {
-      const redirectTarget = getSafeRedirectPath(callbackUrl, routes.feed);
       const res = await signIn('credentials', {
         ...data,
         sourcePage: '/signin',
@@ -53,6 +57,8 @@ export default function SignInForm() {
       } else if (res?.ok) {
         toast.success('Successfully signed in!');
         router.replace(getSafeRedirectPath(res.url, redirectTarget));
+      } else {
+        toast.error('Unable to sign in. Please try again.');
       }
     } catch (error: any) {
       console.error('Login error:', error);

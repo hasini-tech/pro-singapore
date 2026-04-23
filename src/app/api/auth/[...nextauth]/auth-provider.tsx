@@ -10,7 +10,7 @@ export default function AuthProvider({
 }: {
   children: React.ReactNode;
   session?: Session | null;
-}): JSX.Element {
+}): React.ReactElement {
   return (
     <SessionProvider session={session} basePath="/api/auth">
       {children}
