@@ -111,6 +111,9 @@ const POPULAR_TIMEZONES = [
   { label:'Australian Eastern Time - Sydney',offset:'GMT+10:00', tz:'Australia/Sydney' },
 ];
 
+const FLOATING_EMOJIS = ['🎉','✨','🎊','🌟','💫','🎈','🎶','🌈','🎭','🔥','💜','🎤'] as const;
+const SEASONAL_FLOWERS = ['🌸','🌺','🌷','🌼','🌻','🌹'] as const;
+
 // ─── Types & helpers ──────────────────────────────────────────────────────────
 type EventStatus = 'published'|'private'|'draft';
 type OwnerCalendar = { id:string; name:string; is_default:boolean; [k:string]:any };
@@ -229,9 +232,8 @@ function ConfettiHearts() {
 }
 
 function FloatingEmojis() {
-  const emojis=['🎉','✨','🎊','🌟','💫','🎈','🎶','🌈','🎭','🔥','💜','🎤'];
   const items = useMemo(()=>Array.from({length:20},(_,i)=>({
-    emoji: emojis[i%emojis.length],
+    emoji: FLOATING_EMOJIS[i%FLOATING_EMOJIS.length],
     left: Math.random()*100,
     size: 16+Math.random()*24,
     opacity: 0.1+Math.random()*0.25,
@@ -272,9 +274,8 @@ function PatternBg() {
 }
 
 function SeasonalBg() {
-  const flowers=['🌸','🌺','🌷','🌼','🌻','🌹'];
   const items = useMemo(()=>Array.from({length:18},(_,i)=>({
-    emoji:flowers[i%flowers.length],
+    emoji:SEASONAL_FLOWERS[i%SEASONAL_FLOWERS.length],
     top: Math.random()*100, left: Math.random()*100,
     size: 14+Math.random()*22, opacity: 0.12+Math.random()*0.2,
     rot: Math.random()*360,
@@ -603,7 +604,7 @@ export default function CreateEventBuilderPage() {
         if(fb) setSelectedCalendarId(fb.id);
       } catch {}
     })();
-  },[]);
+  },[searchParams]);
 
   const setField=useCallback(<K extends keyof CreateEventForm>(k:K,v:CreateEventForm[K])=>
     setForm(prev=>({...prev,[k]:v})),[]);
@@ -637,7 +638,7 @@ export default function CreateEventBuilderPage() {
   // When start date advances past end date, push end date forward by 1 day automatically
   useEffect(()=>{
     if(endDate<=form.date) setEndDate(addDays(form.date,1));
-  },[form.date]);
+  },[endDate, form.date]);
 
   // common sub-component props
   const pickerProps={C};
@@ -783,7 +784,14 @@ export default function CreateEventBuilderPage() {
         {/* LEFT: Image + Theme */}
         <div style={{display:'flex',flexDirection:'column',gap:14}}>
           <div style={{aspectRatio:'1',borderRadius:20,position:'relative',overflow:'hidden',background:'#3b0764',boxShadow:`0 24px 60px rgba(0,0,0,${isDark?0.5:0.14})`, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-            <img src={uploadedImage||'/growthlab/startup-team-collaboration.png'} alt="Cover" style={{width: '100%', height: '100%', objectFit: 'cover', display: 'block'}}/>
+            <Image
+              src={uploadedImage||'/growthlab/startup-team-collaboration.png'}
+              alt="Cover"
+              fill
+              sizes="(max-width: 768px) 100vw, 340px"
+              unoptimized
+              style={{width: '100%', height: '100%', objectFit: 'cover', display: 'block'}}
+            />
             <button type="button" onClick={()=>fileInputRef.current?.click()} style={{position:'absolute',bottom:14,right:14,width:34,height:34,borderRadius:'50%',background:'rgba(0,0,0,0.65)',color:'#fff',border:'none',display:'grid',placeItems:'center',cursor:'pointer',backdropFilter:'blur(6px)'}}>
               <PiCloudArrowUp size={16}/>
             </button>

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import {
   ArrowRight,
@@ -715,11 +716,14 @@ export default function DiscoverPageClient() {
 
               return (
                 <article key={event.id} className="discover-event-card surface-panel">
-                  <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '24px' }}>
-                    <img
+                  <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '24px', height: '220px' }}>
+                    <Image
                       src={event.cover_image || DEFAULT_EVENT_COVER}
                       alt={event.title}
-                      style={{ width: '100%', height: '220px', objectFit: 'cover' }}
+                      fill
+                      sizes="(max-width: 768px) 100vw, 33vw"
+                      unoptimized
+                      style={{ objectFit: 'cover' }}
                     />
                     <div
                       style={{

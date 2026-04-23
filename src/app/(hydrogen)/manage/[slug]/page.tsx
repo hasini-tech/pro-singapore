@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -500,7 +501,14 @@ export default function ManageEventPage() {
                           {guests.filter(g => g.status === 'confirmed').slice(0, 3).map((g, i) => (
                             <div key={i} style={{ display: "flex", alignItems: "center", gap: 12 }}>
                               <div style={{ width: 32, height: 32, borderRadius: "50%", background: "var(--manage-hover)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${g.user_email}`} alt="avatar" style={{width: 32, height: 32, borderRadius: "50%"}} />
+                                <Image
+                                  src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(g.user_email || "guest")}`}
+                                  alt="avatar"
+                                  width={32}
+                                  height={32}
+                                  unoptimized
+                                  style={{ borderRadius: "50%" }}
+                                />
                               </div>
                               <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
                                 <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>{g.user_name || "Guest"}</span>
@@ -673,7 +681,16 @@ export default function ManageEventPage() {
             <div style={{ display: "grid", gap: 32 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 20px", background: "var(--manage-card)", borderRadius: 20, border: "1px solid #f1f1f1" }}>
                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: "var(--manage-hover)", overflow: "hidden" }}>
-                   {user?.profile_image ? <img src={user.profile_image} alt="" style={{ width: "100%", height: "100%" }} /> : <User size={20} style={{ transform: "translate(6px, 6px)" }} />}
+                   {user?.profile_image ? (
+                    <Image
+                      src={user.profile_image}
+                      alt={user.name || "Profile"}
+                      width={32}
+                      height={32}
+                      unoptimized
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                   ) : <User size={20} style={{ transform: "translate(6px, 6px)" }} />}
                  </div>
                  <span style={{ color: "#bbb", fontWeight: 600 }}>Send a blast to your guests...</span>
               </div>

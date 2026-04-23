@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight, CalendarDays, Loader2, MapPin, Plus, Sparkles, Ticket, Users } from 'lucide-react';
 import { useAuth } from '@/context/auth-context';
@@ -397,12 +398,16 @@ function EventCover({ event }: { event: EventRecord }) {
         border: '1px solid var(--border-color)',
         background: 'var(--teal-050)',
         flexShrink: 0,
+        position: 'relative',
       }}
     >
-      <img
+      <Image
         src={event.cover_image || DEFAULT_EVENT_COVER}
         alt={event.title}
-        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        fill
+        sizes="112px"
+        unoptimized
+        style={{ objectFit: 'cover' }}
       />
     </div>
   );

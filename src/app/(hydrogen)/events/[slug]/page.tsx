@@ -1,4 +1,5 @@
 import React from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { Metadata } from 'next';
 import { headers } from 'next/headers';
@@ -246,7 +247,14 @@ export default async function EventDetailsPage({ params }: { params: Promise<{ s
             }}
           >
             {event.cover_image ? (
-              <img src={event.cover_image} alt={event.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <Image
+                src={event.cover_image}
+                alt={event.title}
+                fill
+                sizes="(max-width: 1024px) 100vw, 70vw"
+                unoptimized
+                style={{ objectFit: 'cover' }}
+              />
             ) : (
               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
                 No cover image yet
@@ -329,7 +337,16 @@ export default async function EventDetailsPage({ params }: { params: Promise<{ s
                   <article key={`${speaker.name}-${index}`} style={{ padding: '18px', borderRadius: '20px', background: 'var(--surface-color)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-soft)' }}>
                     <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginBottom: '12px' }}>
                       {speaker.avatar ? (
-                        <img src={speaker.avatar} alt={speaker.name} style={{ width: '50px', height: '50px', borderRadius: '50%', objectFit: 'cover' }} />
+                        <div style={{ width: '50px', height: '50px', borderRadius: '50%', overflow: 'hidden', position: 'relative', flexShrink: 0 }}>
+                          <Image
+                            src={speaker.avatar}
+                            alt={speaker.name}
+                            fill
+                            sizes="50px"
+                            unoptimized
+                            style={{ objectFit: 'cover' }}
+                          />
+                        </div>
                       ) : (
                         <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: 'rgba(31,106,82,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <Users size={22} color="var(--primary-color)" />
@@ -415,7 +432,16 @@ export default async function EventDetailsPage({ params }: { params: Promise<{ s
                 <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.94rem' }}>{event.host_bio || 'Event organizer'}</p>
               </div>
               {event.host_image ? (
-                <img src={event.host_image} alt={event.host_name} style={{ width: '50px', height: '50px', borderRadius: '50%', objectFit: 'cover' }} />
+                <div style={{ width: '50px', height: '50px', borderRadius: '50%', overflow: 'hidden', position: 'relative', flexShrink: 0 }}>
+                  <Image
+                    src={event.host_image}
+                    alt={event.host_name}
+                    fill
+                    sizes="50px"
+                    unoptimized
+                    style={{ objectFit: 'cover' }}
+                  />
+                </div>
               ) : (
                 <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: 'rgba(31,106,82,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Users size={22} color="var(--primary-color)" />
@@ -479,7 +505,16 @@ export default async function EventDetailsPage({ params }: { params: Promise<{ s
                 {communityAttendees.map((member: any) => (
                   <div key={member.id} style={{ display: 'flex', gap: '12px', alignItems: 'center', padding: '12px', borderRadius: '18px', background: 'rgba(255,255,255,0.68)', border: '1px solid rgba(34,30,26,0.08)' }}>
                     {member.profile_image ? (
-                      <img src={member.profile_image} alt={member.name} style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover' }} />
+                      <div style={{ width: '44px', height: '44px', borderRadius: '50%', overflow: 'hidden', position: 'relative', flexShrink: 0 }}>
+                        <Image
+                          src={member.profile_image}
+                          alt={member.name}
+                          fill
+                          sizes="44px"
+                          unoptimized
+                          style={{ objectFit: 'cover' }}
+                        />
+                      </div>
                     ) : (
                       <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(31,106,82,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <Users size={18} color="var(--primary-color)" />

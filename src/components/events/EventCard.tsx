@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { Calendar, MapPin, Users } from 'lucide-react';
 import { format } from 'date-fns';
@@ -49,10 +50,13 @@ export default function EventCard({ event }: EventProps) {
             overflow: 'hidden',
           }}
         >
-          <img
+          <Image
             src={event.cover_image || DEFAULT_EVENT_COVER}
             alt={event.title}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            fill
+            sizes="(max-width: 768px) 100vw, 33vw"
+            unoptimized
+            style={{ objectFit: 'cover' }}
           />
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, transparent 35%, rgba(17,39,45,0.12) 100%)' }} />
           <div style={{ position: 'absolute', top: '14px', right: '14px' }}>

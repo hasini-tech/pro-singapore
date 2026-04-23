@@ -55,6 +55,10 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'api.growthlab.sg',
       },
+      {
+        protocol: 'https',
+        hostname: 'api.dicebear.com',
+      },
     ],
   },
   reactStrictMode: true,
