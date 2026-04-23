@@ -2,6 +2,8 @@ import './src/env.mjs';
 import path from 'node:path';
 /** @type {import('next').NextConfig} */
 
+const isNetlify = Boolean(process.env.NETLIFY);
+
 const nextConfig = {
   images: {
     remotePatterns: [
@@ -56,9 +58,12 @@ const nextConfig = {
     ],
   },
   reactStrictMode: true,
-  output: 'standalone',
-  outputFileTracingRoot: process.cwd(),
-  transpilePackages: ['core'],
+  ...(isNetlify
+    ? {}
+    : {
+        output: 'standalone',
+        outputFileTracingRoot: process.cwd(),
+      }),
   webpack: (config) => {
     config.resolve ??= {};
     config.resolve.alias ??= {};
