@@ -6,3 +6,6 @@ services:
     buildCommand: pnpm install --frozen-lockfile && pnpm run build
     startCommand: node .next/standalone/server.js
     autoDeploy: true
+    cacheDirectories:
+      - .next/cache
+      - .pnpm-store

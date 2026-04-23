@@ -5,6 +5,10 @@ import path from 'node:path';
 const isNetlify = Boolean(process.env.NETLIFY);
 
 const nextConfig = {
+  onDemandEntries: {
+    maxInactiveAge: 60 * 1000,
+    pagesBufferLength: 5,
+  },
   images: {
     remotePatterns: [
       {
