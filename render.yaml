@@ -3,7 +3,7 @@ services:
     name: pro-singapore
     env: node
     plan: free
-    buildCommand: pnpm install --frozen-lockfile && pnpm run build
+    buildCommand: corepack enable && corepack prepare pnpm@9.15.9 --activate && pnpm install --frozen-lockfile && pnpm run build
     startCommand: node .next/standalone/server.js
     autoDeploy: true
     cacheDirectories:
