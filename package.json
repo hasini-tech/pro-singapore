@@ -10,8 +10,8 @@
     "build": "node --max-old-space-size=4096 ./node_modules/next/dist/bin/next build",
     "type:check": "tsc --noEmit",
     "start": "next start",
-    "clean": "rm -rf node_modules .next .cache .turbo",
-    "cache:clean": "rm -rf .next .cache .turbo",
+    "clean": "rimraf node_modules .next .cache .turbo",
+    "cache:clean": "rimraf .next .cache .turbo",
     "format": "prettier --write ."
   },
   "dependencies": {
